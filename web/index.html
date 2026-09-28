@@ -181,19 +181,8 @@
                 <!-- 清晰度与下载按钮 -->
                 <div class="mt-5 pt-4 border-t border-slate-100">
                     <label class="text-xs font-semibold text-slate-500 block mb-2">选择下载画质：</label>
-                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-                        <button onclick="selectQuality(this, '4K 超高清, 1080P 高码率, 1080P 高清')" class="quality-btn active px-3 py-2 text-xs rounded-xl border border-blue-500 bg-blue-50 text-blue-700 font-medium transition text-center">
-                            4K / 1080P 原画
-                        </button>
-                        <button onclick="selectQuality(this, '720P 高清')" class="quality-btn px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 hover:border-slate-300 font-medium transition text-center">
-                            720P 高清
-                        </button>
-                        <button onclick="selectQuality(this, '480P 清晰')" class="quality-btn px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 hover:border-slate-300 font-medium transition text-center">
-                            480P 标清
-                        </button>
-                        <button onclick="selectQuality(this, 'audio-only')" class="quality-btn px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 hover:border-slate-300 font-medium transition text-center">
-                            仅下载音频 (M4A)
-                        </button>
+                    <div id="qualityOptions" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 mb-4">
+                        <!-- 动态根据视频实际支持的清晰度生成 -->
                     </div>
 
                     <button onclick="submitDownloadTask()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-blue-500/20 transition flex items-center justify-center gap-2">
@@ -564,12 +553,67 @@
             showToast("💡 浏览器限制直接读取剪贴板，请直接按 Ctrl + V 粘贴");
         }
 
-        function selectQuality(btn, q) {
-            document.querySelectorAll(".quality-btn").forEach(b => {
-                b.className = "quality-btn px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 hover:border-slate-300 font-medium transition text-center";
+        let selectedQualityObj = null;
+
+        function renderQualityOptions(qualities) {
+            const container = document.getElementById("qualityOptions");
+            if (!container) return;
+            container.innerHTML = "";
+
+            // 智能确定默认选中项：若当前是大会员则选最高画质，否则选非大会员最高画质
+            const isVip = currentUser && (currentUser.vip_type > 0 || currentUser.vip_label === "大会员");
+            let defaultIdx = -1;
+            if (isVip) {
+                defaultIdx = 0;
+            } else {
+                defaultIdx = qualities.findIndex(q => !q.is_audio && q.badge !== "大会员");
+                if (defaultIdx === -1) defaultIdx = 0;
+            }
+
+            qualities.forEach((q, idx) => {
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.dataset.index = idx;
+
+                let badgeHtml = "";
+                if (q.badge === "大会员") {
+                    badgeHtml = `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-rose-50 text-rose-600 border border-rose-200">大会员</span>`;
+                } else if (q.badge === "登录即享") {
+                    badgeHtml = `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-600 border border-purple-200">登录即享</span>`;
+                } else if (q.badge === "纯音频") {
+                    badgeHtml = `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">音频</span>`;
+                }
+
+                const isSelected = (idx === defaultIdx);
+                btn.className = `quality-btn flex flex-col items-start justify-center p-2.5 rounded-xl border transition text-left relative overflow-hidden ${
+                    isSelected 
+                        ? "active border-blue-500 bg-blue-50/70 text-blue-900 shadow-sm ring-1 ring-blue-500/50" 
+                        : "border-slate-200 bg-white hover:border-slate-300 text-slate-800 hover:bg-slate-50/50"
+                }`;
+
+                btn.innerHTML = `
+                    <div class="flex items-center justify-between w-full gap-1 mb-1">
+                        <span class="font-bold text-xs truncate">${q.desc}</span>
+                        ${badgeHtml}
+                    </div>
+                    <div class="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono">
+                        <i class="fa-regular ${q.is_audio ? 'fa-file-audio' : 'fa-hard-drive'} text-[10px] opacity-70"></i>
+                        <span>${q.size || '未知体积'}</span>
+                    </div>
+                `;
+
+                btn.onclick = () => {
+                    document.querySelectorAll("#qualityOptions .quality-btn").forEach(b => {
+                        b.className = "quality-btn flex flex-col items-start justify-center p-2.5 rounded-xl border transition text-left relative overflow-hidden border-slate-200 bg-white hover:border-slate-300 text-slate-800 hover:bg-slate-50/50";
+                    });
+                    btn.className = "quality-btn active flex flex-col items-start justify-center p-2.5 rounded-xl border transition text-left relative overflow-hidden border-blue-500 bg-blue-50/70 text-blue-900 shadow-sm ring-1 ring-blue-500/50";
+                    selectedQualityObj = q;
+                };
+
+                container.appendChild(btn);
             });
-            btn.className = "quality-btn active px-3 py-2 text-xs rounded-xl border border-blue-500 bg-blue-50 text-blue-700 font-semibold transition text-center";
-            selectedQuality = q;
+
+            selectedQualityObj = qualities[defaultIdx] || qualities[0];
         }
 
         function loadSample(url) {
@@ -608,6 +652,12 @@
                 document.getElementById("videoDuration").innerText = currentVideoData.duration;
                 // 使用后端反代图片，确保 100% 能够加载 B 站图片，防止防盗链与 403
                 document.getElementById("videoCover").src = `/api/image-proxy?url=${encodeURIComponent(v.pic)}`;
+
+                // 动态渲染视频支持的画质与真实预估大小
+                if (v.qualities && v.qualities.length > 0) {
+                    renderQualityOptions(v.qualities);
+                }
+
                 document.getElementById("resultCard").classList.remove("hidden");
             } catch (err) {
                 document.getElementById("resultCard").classList.add("hidden");
@@ -625,32 +675,29 @@
 
         // 发送下载任务给 BBDown Api Server
         async function submitDownloadTask() {
-            if (!currentVideoData) return alert("请先解析视频！");
+            if (!currentVideoData || !selectedQualityObj) return alert("请先解析视频！");
             const s = getSettings();
+            const q = selectedQualityObj;
             
-            // 确定画质标签与文件名模式
-            let qualityLabel = selectedQuality;
+            const isAudio = q.is_audio;
             let filePattern = "<videoTitle>";
             if (s.addDfn) {
-                if (selectedQuality === "audio-only") {
-                    filePattern = "<videoTitle> [仅音频]";
-                    qualityLabel = "仅音频 (M4A)";
-                } else {
-                    filePattern = "<videoTitle> [<dfn>]";
-                    if (selectedQuality.includes("4K")) qualityLabel = "4K / 1080P 原画";
-                    else if (selectedQuality.includes("720P")) qualityLabel = "720P 高清";
-                    else if (selectedQuality.includes("480P")) qualityLabel = "480P 标清";
-                }
+                filePattern = isAudio ? "<videoTitle> [仅音频]" : "<videoTitle> [<dfn>]";
             }
 
             const payload = {
                 Url: currentVideoData.url,
                 UseTvApi: s.tvMode,
                 UserAgent: "curl/8.5.0",
-                DfnPriority: selectedQuality === "audio-only" ? null : selectedQuality,
-                AudioOnly: selectedQuality === "audio-only",
+                DfnPriority: isAudio ? null : (q.dfn || q.desc),
+                AudioOnly: isAudio,
                 FilePattern: filePattern,
-                WorkDir: s.saveDir || "/home/maple/Downloads"
+                WorkDir: s.saveDir || "/home/maple/Downloads",
+                // 附加精准元数据，确保任务列表精确显示
+                Title: currentVideoData.title,
+                QualityLabel: q.desc,
+                DfnTag: q.dfn_tag || (isAudio ? "仅音频" : q.desc),
+                ExpectedExt: isAudio ? ".m4a" : ".mp4"
             };
 
             const cookieToUse = s.cookie || localStorage.getItem("bbdown_cookie") || "";
@@ -664,17 +711,10 @@
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload)
                 });
-                if (!res.ok) throw new Error(await res.text());
+                const result = await res.json();
+                if (result.code !== 0) throw new Error(result.message || "添加任务失败");
 
-                // 记录任务元数据
-                const taskId = (currentVideoData.aid || currentVideoData.bvid || "").toString();
-                saveTaskMeta(taskId, {
-                    title: currentVideoData.title,
-                    qualityLabel: qualityLabel,
-                    filePattern: filePattern
-                });
-
-                showToast(`🚀 已添加下载任务：${qualityLabel}`);
+                showToast(`🚀 已添加下载任务：${q.desc}`);
                 refreshTasks();
             } catch (e) {
                 alert("提交任务失败: " + e.message);
@@ -723,10 +763,16 @@
             running.forEach(t => {
                 const speedMB = (t.DownloadSpeed / (1024 * 1024)).toFixed(2);
                 const percent = Math.round((t.Progress || 0) * 100);
+                const qLabel = t.QualityLabel 
+                    ? `<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">${t.QualityLabel}</span>` 
+                    : "";
                 html += `
                 <div class="glass-card p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col gap-2">
                     <div class="flex justify-between items-center text-sm font-semibold text-slate-800">
-                        <span class="truncate max-w-md">${t.Title || t.Url}</span>
+                        <div class="flex items-center gap-2 truncate max-w-md">
+                            ${qLabel}
+                            <span class="truncate">${t.Title || t.Url}</span>
+                        </div>
                         <span class="text-blue-600 text-xs font-mono bg-blue-50 px-2 py-0.5 rounded">${speedMB} MB/s</span>
                     </div>
                     <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
@@ -742,15 +788,17 @@
             // 渲染已完成的任务
             finished.forEach(t => {
                 const meta = getTaskMeta(t.Aid) || {};
-                const qLabel = meta.qualityLabel 
-                    ? `<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">${meta.qualityLabel}</span>` 
+                const qLabelText = t.QualityLabel || meta.qualityLabel || "";
+                const qLabel = qLabelText 
+                    ? `<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">${qLabelText}</span>` 
                     : "";
                 
                 // 优先展示来自磁盘检测到的真实文件体积与名称
                 let sizeDisplay = "";
                 let nameDisplay = t.ActualFileName || t.Title || t.Url;
                 if (t.ActualSize) {
-                    sizeDisplay = `<span class="text-xs text-slate-500 font-mono">体积: ${t.ActualSize}</span>`;
+                    const fileWarn = t.FileExists === false ? `<span class="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">已移出保存目录</span>` : "";
+                    sizeDisplay = `<span class="text-xs text-slate-500 font-mono">体积: ${t.ActualSize}</span> ${fileWarn}`;
                 } else if (t.TotalDownloadedBytes > 0) {
                     const mb = (t.TotalDownloadedBytes / (1024 * 1024)).toFixed(1);
                     sizeDisplay = `<span class="text-xs text-slate-500 font-mono">体积: ${mb} MB</span>`;

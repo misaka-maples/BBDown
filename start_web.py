@@ -59,6 +59,107 @@ def clear_cookie_files():
         except Exception:
             pass
 
+REGISTERED_TASKS = []
+
+QUALITY_CONFIG = {
+    127: {"dfn_tag": "8K 超高清", "dfn_priority": "8K 超高清", "fallback_kbps": 11000},
+    126: {"dfn_tag": "杜比视界", "dfn_priority": "杜比视界", "fallback_kbps": 8000},
+    125: {"dfn_tag": "HDR 真彩", "dfn_priority": "HDR 真彩", "fallback_kbps": 8000},
+    120: {"dfn_tag": "4K 超清", "dfn_priority": "4K 超清, 4K 超高清", "fallback_kbps": 7500},
+    116: {"dfn_tag": "1080P 高帧率", "dfn_priority": "1080P 高帧率, 1080P 60帧, 1080P 高码率", "fallback_kbps": 1800},
+    112: {"dfn_tag": "1080P 高码率", "dfn_priority": "1080P 高码率, 1080P 高帧率", "fallback_kbps": 1500},
+    80:  {"dfn_tag": "1080P 高清", "dfn_priority": "1080P 高清", "fallback_kbps": 1000},
+    74:  {"dfn_tag": "720P 高帧率", "dfn_priority": "720P 高帧率", "fallback_kbps": 800},
+    64:  {"dfn_tag": "720P 高清", "dfn_priority": "720P 高清, 720P 准高清", "fallback_kbps": 550},
+    32:  {"dfn_tag": "480P 清晰", "dfn_priority": "480P 清晰, 480P 标清", "fallback_kbps": 220},
+    16:  {"dfn_tag": "360P 流畅", "dfn_priority": "360P 流畅", "fallback_kbps": 130},
+}
+
+def fetch_qualities(bvid, cid, duration, cookie=""):
+    try:
+        play_url = f"https://api.bilibili.com/x/player/playurl?bvid={bvid}&cid={cid}&qn=127&fnval=4048&fourk=1"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://www.bilibili.com"
+        }
+        if cookie:
+            headers["Cookie"] = cookie
+        req = urllib.request.Request(play_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = json.loads(resp.read().decode("utf-8")).get("data", {})
+
+        max_audio_bw = 0
+        for a in data.get("dash", {}).get("audio", []):
+            max_audio_bw = max(max_audio_bw, a.get("bandwidth", 0))
+
+        video_bw = {}
+        for v in data.get("dash", {}).get("video", []):
+            qn = v.get("id")
+            if qn not in video_bw:
+                video_bw[qn] = v.get("bandwidth", 0)
+
+        qualities = []
+        for sf in data.get("support_formats", []):
+            qn = sf.get("quality")
+            desc = sf.get("new_description") or sf.get("display_desc") or ""
+            reason = sf.get("can_watch_qn_reason", 0)
+
+            cfg = QUALITY_CONFIG.get(qn, {
+                "dfn_tag": desc,
+                "dfn_priority": desc,
+                "fallback_kbps": 1000
+            })
+
+            badge = ""
+            badge_type = "free"
+            if reason == 3:
+                badge = "大会员"
+                badge_type = "vip"
+            elif qn >= 80:
+                badge = "登录即享"
+                badge_type = "login"
+
+            bw = video_bw.get(qn, 0)
+            if bw and duration:
+                size_mb = round((bw + max_audio_bw) * duration / 8 / (1024 * 1024), 1)
+            elif duration:
+                size_mb = round((cfg["fallback_kbps"] * 1000 + max_audio_bw) * duration / 8 / (1024 * 1024), 1)
+            else:
+                size_mb = 0
+
+            qualities.append({
+                "qn": qn,
+                "desc": desc,
+                "dfn": cfg["dfn_priority"],
+                "dfn_tag": cfg["dfn_tag"],
+                "badge": badge,
+                "badge_type": badge_type,
+                "size": f"{size_mb} MB" if size_mb else "未知",
+                "is_audio": False
+            })
+
+        # 添加音频流选项
+        audio_mb = round(max_audio_bw * duration / 8 / (1024 * 1024), 1) if (max_audio_bw and duration) else round(192 * 1000 * duration / 8 / (1024 * 1024), 1)
+        qualities.append({
+            "qn": 0,
+            "desc": "仅下载音频 (M4A)",
+            "dfn": "",
+            "dfn_tag": "仅音频",
+            "badge": "纯音频",
+            "badge_type": "audio",
+            "size": f"{audio_mb} MB" if audio_mb else "高音质",
+            "is_audio": True
+        })
+        return qualities
+    except Exception as e:
+        print(f"[!] 获取画质列表失败: {e}", flush=True)
+        return [
+            {"qn": 120, "desc": "4K / 1080P 原画", "dfn": "4K 超清, 4K 超高清, 1080P 高码率, 1080P 高清", "dfn_tag": "原画", "badge": "", "badge_type": "free", "size": "自动", "is_audio": False},
+            {"qn": 64, "desc": "720P 准高清", "dfn": "720P 高清, 720P 准高清", "dfn_tag": "720P 高清", "badge": "", "badge_type": "free", "size": "约 30 MB", "is_audio": False},
+            {"qn": 32, "desc": "480P 标清", "dfn": "480P 清晰, 480P 标清", "dfn_tag": "480P 清晰", "badge": "", "badge_type": "free", "size": "约 18 MB", "is_audio": False},
+            {"qn": 0, "desc": "仅下载音频 (M4A)", "dfn": "", "dfn_tag": "仅音频", "badge": "纯音频", "badge_type": "audio", "size": "约 8 MB", "is_audio": True}
+        ]
+
 def parse_bili_url(raw_url):
     req = urllib.request.Request(raw_url, headers={"User-Agent": "curl/8.5.0"})
     try:
@@ -89,13 +190,18 @@ def parse_bili_url(raw_url):
         if data.get("code") != 0:
             raise ValueError(data.get("message", "B站接口错误"))
         v = data["data"]
+        cid = v.get("cid") or (v.get("pages") and v["pages"][0].get("cid")) or 0
+        duration = v.get("duration", 0)
+        qualities = fetch_qualities(v["bvid"], cid, duration, cookie)
         return {
             "title": v["title"],
             "pic": v["pic"].replace("http://", "https://"),
             "bvid": v["bvid"],
             "aid": v["aid"],
-            "duration": v["duration"],
-            "owner": v["owner"]["name"]
+            "cid": cid,
+            "duration": duration,
+            "owner": v["owner"]["name"],
+            "qualities": qualities
         }
 
 def get_user_info(cookie_str=None):
@@ -132,22 +238,61 @@ def get_user_info(cookie_str=None):
 
     return {"is_login": False}
 
-def find_matching_files(title, save_dir):
-    matches = []
+def find_specific_task_file(title, dfn_tag, expected_ext, save_dir):
     if not os.path.exists(save_dir) or not title:
-        return matches
+        return None
     clean_title = re.sub(r'[\\/:*?"<>|]', '_', title)[:25]
+    
+    # 1. 尝试精确查找
+    if dfn_tag:
+        exact_name = f"{clean_title} [{dfn_tag}]{expected_ext}"
+        exact_path = os.path.join(save_dir, exact_name)
+        if os.path.isfile(exact_path):
+            size_mb = os.path.getsize(exact_path) / (1024 * 1024)
+            return {"name": exact_name, "path": exact_path, "size": f"{size_mb:.1f} MB"}
+
+    # 2. 依据 title 前缀与特定画质标签模糊搜索
+    tag_keywords = []
+    if dfn_tag:
+        dt = dfn_tag.lower()
+        if "8k" in dt:
+            tag_keywords.extend(["8k", "8000"])
+        elif "4k" in dt:
+            tag_keywords.extend(["4k", "4096"])
+        elif "1080p" in dt or "1080" in dt:
+            tag_keywords.extend(["1080p", "1080"])
+        elif "720p" in dt or "720" in dt:
+            tag_keywords.extend(["720p", "720"])
+        elif "480p" in dt or "480" in dt:
+            tag_keywords.extend(["480p", "480"])
+        elif "360p" in dt or "360" in dt:
+            tag_keywords.extend(["360p", "360"])
+        elif "音频" in dt:
+            tag_keywords.extend(["仅音频", "audio", ".m4a"])
+        else:
+            tag_keywords.append(dt)
+
     try:
+        clean_title_sub = clean_title.lower()[:15]
         for fname in os.listdir(save_dir):
-            if fname.endswith((".mp4", ".m4a", ".m4s", ".mkv")):
-                if clean_title in fname or title[:15] in fname:
+            if not fname.endswith((".mp4", ".m4a", ".mkv")):
+                continue
+            fname_lower = fname.lower()
+            if clean_title_sub in fname_lower:
+                if tag_keywords:
+                    if any(kw in fname_lower for kw in tag_keywords):
+                        fpath = os.path.join(save_dir, fname)
+                        if os.path.isfile(fpath):
+                            size_mb = os.path.getsize(fpath) / (1024 * 1024)
+                            return {"name": fname, "path": fpath, "size": f"{size_mb:.1f} MB"}
+                else:
                     fpath = os.path.join(save_dir, fname)
                     if os.path.isfile(fpath):
                         size_mb = os.path.getsize(fpath) / (1024 * 1024)
-                        matches.append({"name": fname, "size": f"{size_mb:.1f} MB", "path": fpath})
+                        return {"name": fname, "path": fpath, "size": f"{size_mb:.1f} MB"}
     except Exception:
         pass
-    return matches
+    return None
 
 class WebUIHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -313,15 +458,52 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                 except:
                     pass
 
-            # 为已完成任务匹配本地实际文件体积
-            for t in tasks_data.get("Finished", []):
+            # 为任务关联注册元数据并精确检测本地文件
+            finished_tasks = tasks_data.get("Finished", [])
+            for idx, t in enumerate(finished_tasks):
                 title = t.get("Title") or ""
-                if title:
-                    matched = find_matching_files(title, DEFAULT_DOWNLOAD_DIR)
-                    if matched:
-                        t["ActualFiles"] = matched
-                        t["ActualSize"] = matched[0]["size"]
-                        t["ActualFileName"] = matched[0]["name"]
+                url = t.get("Url") or ""
+
+                meta = None
+                matched_metas = [m for m in REGISTERED_TASKS if m.get("url") == url or (title and m.get("title") == title)]
+                if matched_metas:
+                    meta = matched_metas[idx] if idx < len(matched_metas) else matched_metas[-1]
+
+                quality_label = meta.get("qualityLabel", "") if meta else ""
+                dfn_tag = meta.get("dfnTag", "") if meta else ""
+                work_dir = meta.get("workDir", DEFAULT_DOWNLOAD_DIR) if meta else DEFAULT_DOWNLOAD_DIR
+                expected_ext = meta.get("expectedExt", ".mp4") if meta else ".mp4"
+
+                t["QualityLabel"] = quality_label
+                t["DfnTag"] = dfn_tag
+                t["WorkDir"] = work_dir
+
+                # 精准查找该任务对应的文件，绝不串用其他画质的文件
+                match_info = find_specific_task_file(title, dfn_tag, expected_ext, work_dir)
+                if match_info:
+                    t["ActualFileName"] = match_info["name"]
+                    t["ActualSize"] = match_info["size"]
+                    t["ActualFilePath"] = match_info["path"]
+                    t["FileExists"] = True
+                else:
+                    clean_title = re.sub(r'[\\/:*?"<>|]', '_', title)[:40]
+                    t["ActualFileName"] = f"{clean_title} [{dfn_tag}]{expected_ext}" if dfn_tag else f"{clean_title}{expected_ext}"
+                    t["FileExists"] = False
+                    if t.get("TotalDownloadedBytes", 0) > 0:
+                        t["ActualSize"] = f"{t['TotalDownloadedBytes'] / (1024 * 1024):.1f} MB"
+                    else:
+                        t["ActualSize"] = "文件已移出目录"
+
+            # 运行中任务也关联标签
+            running_tasks = tasks_data.get("Running", [])
+            for idx, t in enumerate(running_tasks):
+                url = t.get("Url") or ""
+                title = t.get("Title") or ""
+                matched_metas = [m for m in REGISTERED_TASKS if m.get("url") == url or (title and m.get("title") == title)]
+                if matched_metas:
+                    meta = matched_metas[-1]
+                    t["QualityLabel"] = meta.get("qualityLabel", "")
+                    t["DfnTag"] = meta.get("dfnTag", "")
 
             return self.send_json(200, tasks_data)
 
@@ -329,6 +511,7 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         if path == "/api/tasks/clear":
             try:
                 urllib.request.urlopen(f"http://127.0.0.1:{SERVER_PORT}/remove-finished/", timeout=3)
+                REGISTERED_TASKS.clear()
                 return self.send_json(200, {"code": 0, "message": "已清空任务记录"})
             except Exception as e:
                 return self.send_json(500, {"code": -1, "message": str(e)})
@@ -350,9 +533,34 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             post_body = self.rfile.read(content_len)
             try:
                 req_data = json.loads(post_body.decode("utf-8"))
+
+                # 记录任务元数据，便于任务列表精确显示各清晰度与对应文件
+                task_meta = {
+                    "url": req_data.get("Url", ""),
+                    "title": req_data.get("Title", ""),
+                    "qualityLabel": req_data.get("QualityLabel", ""),
+                    "dfnTag": req_data.get("DfnTag", ""),
+                    "workDir": req_data.get("WorkDir", DEFAULT_DOWNLOAD_DIR),
+                    "expectedExt": req_data.get("ExpectedExt", ".mp4"),
+                    "addTime": time.time()
+                }
+                REGISTERED_TASKS.append(task_meta)
+
+                bbdown_payload = {
+                    "Url": req_data.get("Url"),
+                    "UseTvApi": req_data.get("UseTvApi", False),
+                    "UserAgent": req_data.get("UserAgent", "curl/8.5.0"),
+                    "DfnPriority": req_data.get("DfnPriority"),
+                    "AudioOnly": req_data.get("AudioOnly", False),
+                    "FilePattern": req_data.get("FilePattern", "<videoTitle> [<dfn>]"),
+                    "WorkDir": req_data.get("WorkDir", DEFAULT_DOWNLOAD_DIR)
+                }
+                if req_data.get("Cookie"):
+                    bbdown_payload["Cookie"] = req_data.get("Cookie")
+
                 bbdown_req = urllib.request.Request(
                     f"http://127.0.0.1:{SERVER_PORT}/add-task",
-                    data=json.dumps(req_data).encode("utf-8"),
+                    data=json.dumps(bbdown_payload).encode("utf-8"),
                     headers={"Content-Type": "application/json"}
                 )
                 with urllib.request.urlopen(bbdown_req, timeout=5) as resp:
