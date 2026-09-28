@@ -318,6 +318,29 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
+        # 根目录与首页处理：注入全局安全防崩溃脚本
+        if path in ("/", "/index.html"):
+            html_file = os.path.join(WEB_DIR, "index.html")
+            if os.path.exists(html_file):
+                try:
+                    with open(html_file, "r", encoding="utf-8") as f:
+                        html_content = f.read()
+                    
+                    guard = '<script>var currentUser = null; window.currentUser = null;</script>'
+                    if 'var currentUser = null;' not in html_content:
+                        html_content = html_content.replace('<head>', f'<head>\n    {guard}')
+                    html_content = html_content.replace('const isVip = currentUser &&', 'const isVip = window.currentUser &&')
+                    
+                    raw_bytes = html_content.encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(raw_bytes)))
+                    self.end_headers()
+                    self.wfile.write(raw_bytes)
+                    return
+                except Exception as e:
+                    print(f"[!] 读取 index.html 失败: {e}", flush=True)
+
         # 0. 封面图片代理 (彻底解决 B 站图片防盗链 403 问题)
         if path == "/api/image-proxy":
             query = urllib.parse.parse_qs(parsed.query)
