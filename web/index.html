@@ -311,7 +311,7 @@
     </footer>
 
     <script>
-        let currentUser = null;
+        window.currentUser = null;
         let selectedQuality = "4K 超高清, 1080P 高码率, 1080P 高清";
         let currentVideoData = null;
         let qrCodeObj = null;
@@ -392,7 +392,7 @@
                 const userCard = document.getElementById("navUserCard");
 
                 if (data.is_login) {
-                    currentUser = data;
+                    window.currentUser = data;
                     if (data.cookie) {
                         localStorage.setItem("bbdown_cookie", data.cookie);
                     }
@@ -408,7 +408,7 @@
                         badge.classList.add("hidden");
                     }
                 } else {
-                    currentUser = null;
+                    window.currentUser = null;
                     loginBtn.classList.remove("hidden");
                     userCard.classList.add("hidden");
                 }
@@ -564,7 +564,8 @@
             container.innerHTML = "";
 
             // 智能确定默认选中项：若当前是大会员则选最高画质，否则选非大会员最高画质
-            const isVip = currentUser && (currentUser.vip_type > 0 || currentUser.vip_label === "大会员");
+            const user = window.currentUser || null;
+            const isVip = Boolean(user && (user.vip_type > 0 || user.vip_label === "大会员"));
             let defaultIdx = -1;
             if (isVip) {
                 defaultIdx = 0;
