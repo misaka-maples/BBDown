@@ -238,61 +238,131 @@ def get_user_info(cookie_str=None):
 
     return {"is_login": False}
 
+def extract_video_id(url, aid=None):
+    if aid:
+        return str(aid)
+    if not url:
+        return ""
+    m = re.search(r"BV[0-9A-Za-z]{10}", url)
+    if m:
+        return m.group(0)
+    m2 = re.search(r"av(\d+)", url, re.IGNORECASE)
+    if m2:
+        return m2.group(1)
+    return url
+
 def find_specific_task_file(title, dfn_tag, expected_ext, save_dir):
     if not os.path.exists(save_dir) or not title:
         return None
-    clean_title = re.sub(r'[\\/:*?"<>|]', '_', title)[:25]
+    # 模拟 BBDown 文件名合法化逻辑：不截断标题，替换非法字符并清理两端点与空格
+    clean_title = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', title).strip().rstrip('.').strip()
     
-    # 1. 尝试精确查找
+    # 1. 优先尝试精确匹配
     if dfn_tag:
         exact_name = f"{clean_title} [{dfn_tag}]{expected_ext}"
         exact_path = os.path.join(save_dir, exact_name)
         if os.path.isfile(exact_path):
             size_mb = os.path.getsize(exact_path) / (1024 * 1024)
-            return {"name": exact_name, "path": exact_path, "size": f"{size_mb:.1f} MB"}
+            return {
+                "name": exact_name,
+                "path": exact_path,
+                "size": f"{size_mb:.1f} MB",
+                "matched_dfn": dfn_tag,
+                "is_downgraded": False
+            }
 
-    # 2. 依据 title 前缀与特定画质标签模糊搜索
+    # 2. 匹配可能未带清晰度标签的命名
+    no_dfn_name = f"{clean_title}{expected_ext}"
+    no_dfn_path = os.path.join(save_dir, no_dfn_name)
+    if not dfn_tag and os.path.isfile(no_dfn_path):
+        size_mb = os.path.getsize(no_dfn_path) / (1024 * 1024)
+        return {
+            "name": no_dfn_name,
+            "path": no_dfn_path,
+            "size": f"{size_mb:.1f} MB",
+            "matched_dfn": "",
+            "is_downgraded": False
+        }
+
+    # 3. 扫描 save_dir 中的媒体文件
+    try:
+        files = os.listdir(save_dir)
+    except Exception:
+        return None
+
+    # 提取标题的核心部分 (去除前导【...】或 [...] 标签)
+    core_title = re.sub(r'^[\[【][^\]】]+[\]】]\s*', '', clean_title).strip()
+    candidate_matches = []
+    
+    for fname in files:
+        if not fname.endswith((".mp4", ".m4a", ".mkv")):
+            continue
+        # 匹配标题：以 clean_title 开头，或包含足够长度的 core_title
+        is_match = False
+        if fname.startswith(clean_title):
+            is_match = True
+        elif core_title and len(core_title) >= 6 and core_title in fname:
+            is_match = True
+            
+        if is_match:
+            fpath = os.path.join(save_dir, fname)
+            if os.path.isfile(fpath):
+                size_mb = os.path.getsize(fpath) / (1024 * 1024)
+                candidate_matches.append({
+                    "name": fname,
+                    "path": fpath,
+                    "size": f"{size_mb:.1f} MB",
+                    "fname_lower": fname.lower()
+                })
+
+    if not candidate_matches:
+        return None
+
+    # 4. 在候选文件中优先在末尾清晰度标签内寻找目标清晰度关键词
     tag_keywords = []
     if dfn_tag:
         dt = dfn_tag.lower()
-        if "8k" in dt:
-            tag_keywords.extend(["8k", "8000"])
-        elif "4k" in dt:
-            tag_keywords.extend(["4k", "4096"])
-        elif "1080p" in dt or "1080" in dt:
-            tag_keywords.extend(["1080p", "1080"])
-        elif "720p" in dt or "720" in dt:
-            tag_keywords.extend(["720p", "720"])
-        elif "480p" in dt or "480" in dt:
-            tag_keywords.extend(["480p", "480"])
-        elif "360p" in dt or "360" in dt:
-            tag_keywords.extend(["360p", "360"])
-        elif "音频" in dt:
-            tag_keywords.extend(["仅音频", "audio", ".m4a"])
-        else:
-            tag_keywords.append(dt)
+        if "8k" in dt: tag_keywords.extend(["8k", "8000"])
+        elif "4k" in dt: tag_keywords.extend(["4k", "4096"])
+        elif "1080p" in dt or "1080" in dt: tag_keywords.extend(["1080p", "1080"])
+        elif "720p" in dt or "720" in dt: tag_keywords.extend(["720p", "720"])
+        elif "480p" in dt or "480" in dt: tag_keywords.extend(["480p", "480"])
+        elif "360p" in dt or "360" in dt: tag_keywords.extend(["360p", "360"])
+        elif "音频" in dt: tag_keywords.extend(["仅音频", "audio", ".m4a"])
+        else: tag_keywords.append(dt)
 
-    try:
-        clean_title_sub = clean_title.lower()[:15]
-        for fname in os.listdir(save_dir):
-            if not fname.endswith((".mp4", ".m4a", ".mkv")):
-                continue
-            fname_lower = fname.lower()
-            if clean_title_sub in fname_lower:
-                if tag_keywords:
-                    if any(kw in fname_lower for kw in tag_keywords):
-                        fpath = os.path.join(save_dir, fname)
-                        if os.path.isfile(fpath):
-                            size_mb = os.path.getsize(fpath) / (1024 * 1024)
-                            return {"name": fname, "path": fpath, "size": f"{size_mb:.1f} MB"}
-                else:
-                    fpath = os.path.join(save_dir, fname)
-                    if os.path.isfile(fpath):
-                        size_mb = os.path.getsize(fpath) / (1024 * 1024)
-                        return {"name": fname, "path": fpath, "size": f"{size_mb:.1f} MB"}
-    except Exception:
-        pass
-    return None
+    if tag_keywords:
+        for cand in candidate_matches:
+            # 严格提取括号中的清晰度标签，避免视频标题自带的"4K"等字眼误伤
+            m = re.search(r'\[([^\]]+)\]\.(?:mp4|m4a|mkv)$', cand["name"])
+            if m:
+                bracket_tag = m.group(1).lower()
+                if any(kw in bracket_tag for kw in tag_keywords):
+                    return {
+                        "name": cand["name"],
+                        "path": cand["path"],
+                        "size": cand["size"],
+                        "matched_dfn": dfn_tag,
+                        "is_downgraded": False
+                    }
+
+    # 5. 如果没有找到目标画质，但目录下确实存在该视频的其他清晰度文件 (例如 B 站权限限制自动降级为 1080P)
+    # 按修改时间倒序排列，优先取最新生成的文件，并标记实际画质
+    candidate_matches.sort(key=lambda c: os.path.getmtime(c["path"]), reverse=True)
+    best_cand = candidate_matches[0]
+    
+    actual_tag_match = re.search(r'\[([^\]]+)\]\.(?:mp4|m4a|mkv)$', best_cand["name"])
+    actual_tag = actual_tag_match.group(1) if actual_tag_match else ""
+    is_downgraded = bool(dfn_tag and actual_tag and dfn_tag not in actual_tag and actual_tag not in dfn_tag)
+    
+    return {
+        "name": best_cand["name"],
+        "path": best_cand["path"],
+        "size": best_cand["size"],
+        "matched_dfn": actual_tag or dfn_tag,
+        "is_downgraded": is_downgraded,
+        "downgrade_note": f"实际下载: {actual_tag}" if is_downgraded else ""
+    }
 
 class WebUIHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -317,29 +387,6 @@ class WebUIHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
-
-        # 根目录与首页处理：注入全局安全防崩溃脚本
-        if path in ("/", "/index.html"):
-            html_file = os.path.join(WEB_DIR, "index.html")
-            if os.path.exists(html_file):
-                try:
-                    with open(html_file, "r", encoding="utf-8") as f:
-                        html_content = f.read()
-                    
-                    guard = '<script>var currentUser = null; window.currentUser = null;</script>'
-                    if 'var currentUser = null;' not in html_content:
-                        html_content = html_content.replace('<head>', f'<head>\n    {guard}')
-                    html_content = html_content.replace('const isVip = currentUser &&', 'const isVip = window.currentUser &&')
-                    
-                    raw_bytes = html_content.encode("utf-8")
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/html; charset=utf-8")
-                    self.send_header("Content-Length", str(len(raw_bytes)))
-                    self.end_headers()
-                    self.wfile.write(raw_bytes)
-                    return
-                except Exception as e:
-                    print(f"[!] 读取 index.html 失败: {e}", flush=True)
 
         # 0. 封面图片代理 (彻底解决 B 站图片防盗链 403 问题)
         if path == "/api/image-proxy":
@@ -483,14 +530,23 @@ class WebUIHandler(SimpleHTTPRequestHandler):
 
             # 为任务关联注册元数据并精确检测本地文件
             finished_tasks = tasks_data.get("Finished", [])
-            for idx, t in enumerate(finished_tasks):
+            vid_counters = {}
+            for t in finished_tasks:
                 title = t.get("Title") or ""
                 url = t.get("Url") or ""
+                aid = str(t.get("Aid") or "")
+                vid_id = extract_video_id(url, aid)
 
+                matched_metas = [
+                    m for m in REGISTERED_TASKS 
+                    if (extract_video_id(m.get("url", "")) == vid_id) or (title and m.get("title") == title)
+                ]
+                
+                meta_idx = vid_counters.get(vid_id, 0)
                 meta = None
-                matched_metas = [m for m in REGISTERED_TASKS if m.get("url") == url or (title and m.get("title") == title)]
                 if matched_metas:
-                    meta = matched_metas[idx] if idx < len(matched_metas) else matched_metas[-1]
+                    meta = matched_metas[meta_idx] if meta_idx < len(matched_metas) else matched_metas[-1]
+                vid_counters[vid_id] = meta_idx + 1
 
                 quality_label = meta.get("qualityLabel", "") if meta else ""
                 dfn_tag = meta.get("dfnTag", "") if meta else ""
@@ -508,10 +564,16 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                     t["ActualSize"] = match_info["size"]
                     t["ActualFilePath"] = match_info["path"]
                     t["FileExists"] = True
+                    t["IsDowngraded"] = match_info.get("is_downgraded", False)
+                    t["DowngradeNote"] = match_info.get("downgrade_note", "")
+                    if match_info.get("is_downgraded") and match_info.get("matched_dfn"):
+                        t["DownloadedDfn"] = match_info["matched_dfn"]
                 else:
-                    clean_title = re.sub(r'[\\/:*?"<>|]', '_', title)[:40]
+                    clean_title = re.sub(r'[\\/:*?"<>|\x00-\x1f]', '_', title).strip().rstrip('.').strip()
                     t["ActualFileName"] = f"{clean_title} [{dfn_tag}]{expected_ext}" if dfn_tag else f"{clean_title}{expected_ext}"
                     t["FileExists"] = False
+                    t["IsDowngraded"] = False
+                    t["DowngradeNote"] = ""
                     if t.get("TotalDownloadedBytes", 0) > 0:
                         t["ActualSize"] = f"{t['TotalDownloadedBytes'] / (1024 * 1024):.1f} MB"
                     else:
@@ -519,10 +581,15 @@ class WebUIHandler(SimpleHTTPRequestHandler):
 
             # 运行中任务也关联标签
             running_tasks = tasks_data.get("Running", [])
-            for idx, t in enumerate(running_tasks):
+            for t in running_tasks:
                 url = t.get("Url") or ""
                 title = t.get("Title") or ""
-                matched_metas = [m for m in REGISTERED_TASKS if m.get("url") == url or (title and m.get("title") == title)]
+                aid = str(t.get("Aid") or "")
+                vid_id = extract_video_id(url, aid)
+                matched_metas = [
+                    m for m in REGISTERED_TASKS 
+                    if (extract_video_id(m.get("url", "")) == vid_id) or (title and m.get("title") == title)
+                ]
                 if matched_metas:
                     meta = matched_metas[-1]
                     t["QualityLabel"] = meta.get("qualityLabel", "")
@@ -578,8 +645,10 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                     "FilePattern": req_data.get("FilePattern", "<videoTitle> [<dfn>]"),
                     "WorkDir": req_data.get("WorkDir", DEFAULT_DOWNLOAD_DIR)
                 }
-                if req_data.get("Cookie"):
-                    bbdown_payload["Cookie"] = req_data.get("Cookie")
+                # 无论前端是否传递，自动补充本地保存的有效认证 Cookie
+                cookie_to_use = req_data.get("Cookie") or get_saved_cookie()
+                if cookie_to_use:
+                    bbdown_payload["Cookie"] = cookie_to_use
 
                 bbdown_req = urllib.request.Request(
                     f"http://127.0.0.1:{SERVER_PORT}/add-task",
@@ -596,7 +665,8 @@ class WebUIHandler(SimpleHTTPRequestHandler):
 def start_bbdown_server():
     cmd = ["BBDown", "dummy", "serve", "-l", f"http://127.0.0.1:{SERVER_PORT}"]
     print(f"[*] 正在启动 BBDown API 核心服务 (http://127.0.0.1:{SERVER_PORT})...", flush=True)
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    log_file = open("/tmp/bbdown_server.log", "a", encoding="utf-8")
+    proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT)
     return proc
 
 def main():

@@ -288,8 +288,11 @@
                     <input id="settingCookie" type="password" placeholder="可手动填入已有的 SESSDATA" class="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500">
                 </div>
                 <div class="flex items-center justify-between pt-2">
-                    <span class="text-xs font-medium text-slate-700">启用 TV 模式 (推荐，防 412 拦截)</span>
-                    <input id="settingTvMode" type="checkbox" checked class="w-4 h-4 text-blue-600 rounded">
+                    <div>
+                        <span class="text-xs font-medium text-slate-700 block">启用 TV 端解析模式</span>
+                        <span class="text-[11px] text-slate-400">仅限拥有 TV 端独立会员时开启，默认使用网页版大会员</span>
+                    </div>
+                    <input id="settingTvMode" type="checkbox" class="w-4 h-4 text-blue-600 rounded">
                 </div>
                 <div class="flex items-center justify-between pt-2 border-t border-slate-100">
                     <div>
@@ -323,7 +326,7 @@
                 serverUrl: localStorage.getItem("bbdown_server_url") || "http://127.0.0.1:58682",
                 saveDir: localStorage.getItem("bbdown_save_dir") || "/home/maple/Downloads",
                 cookie: localStorage.getItem("bbdown_cookie") || "",
-                tvMode: localStorage.getItem("bbdown_tv_mode") !== "false",
+                tvMode: localStorage.getItem("bbdown_tv_mode") === "true",
                 addDfn: localStorage.getItem("bbdown_add_dfn") !== "false"
             };
         }
@@ -602,7 +605,7 @@
                     </div>
                     <div class="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono">
                         <i class="fa-regular ${q.is_audio ? 'fa-file-audio' : 'fa-hard-drive'} text-[10px] opacity-70"></i>
-                        <span>${q.size || '未知体积'}</span>
+                        <span>${q.size ? `~${q.size}` : '未知体积'}</span>
                     </div>
                 `;
 
@@ -792,10 +795,16 @@
             // 渲染已完成的任务
             finished.forEach(t => {
                 const meta = getTaskMeta(t.Aid) || {};
-                const qLabelText = t.QualityLabel || meta.qualityLabel || "";
-                const qLabel = qLabelText 
-                    ? `<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">${qLabelText}</span>` 
-                    : "";
+                const qLabelText = t.DownloadedDfn || t.QualityLabel || meta.qualityLabel || "";
+                
+                let qLabel = "";
+                if (qLabelText) {
+                    if (t.IsDowngraded) {
+                        qLabel = `<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200" title="${t.DowngradeNote || '因B站账号权限或TV限制，已自动降级下载'}">${qLabelText} (已降级)</span>`;
+                    } else {
+                        qLabel = `<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">${qLabelText}</span>`;
+                    }
+                }
                 
                 // 优先展示来自磁盘检测到的真实文件体积与名称
                 let sizeDisplay = "";
