@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>BiliDown - 哔哩哔哩视频在线解析下载</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -208,10 +211,16 @@
                     <i class="fa-solid fa-list-check text-blue-500"></i>
                     <span>下载任务列表</span>
                 </h3>
-                <button onclick="refreshTasks()" class="text-xs text-slate-500 hover:text-blue-600 flex items-center gap-1 transition">
-                    <i class="fa-solid fa-arrows-rotate"></i>
-                    <span>刷新</span>
-                </button>
+                <div class="flex items-center gap-3">
+                    <button onclick="clearTasks()" class="text-xs text-slate-400 hover:text-rose-600 flex items-center gap-1 transition" title="清空下载历史记录">
+                        <i class="fa-regular fa-trash-can"></i>
+                        <span>清空记录</span>
+                    </button>
+                    <button onclick="refreshTasks()" class="text-xs text-slate-500 hover:text-blue-600 flex items-center gap-1 transition">
+                        <i class="fa-solid fa-arrows-rotate"></i>
+                        <span>刷新</span>
+                    </button>
+                </div>
             </div>
 
             <div id="taskList" class="space-y-3">
@@ -517,13 +526,42 @@
             }
         }
 
-        async function pasteClipboard() {
-            try {
-                const text = await navigator.clipboard.readText();
-                document.getElementById("urlInput").value = text;
-            } catch (e) {
-                alert("无法访问剪贴板，请手动粘贴");
+        function showToast(msg) {
+            let toast = document.getElementById("globalToast");
+            if (!toast) {
+                toast = document.createElement("div");
+                toast.id = "globalToast";
+                toast.className = "fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900/90 text-white text-xs px-4 py-2.5 rounded-full shadow-xl z-50 transition-all duration-300 pointer-events-none";
+                document.body.appendChild(toast);
             }
+            toast.innerText = msg;
+            toast.style.opacity = "1";
+            toast.style.transform = "translate(-50%, 0)";
+            clearTimeout(window.toastTimer);
+            window.toastTimer = setTimeout(() => {
+                toast.style.opacity = "0";
+                toast.style.transform = "translate(-50%, 10px)";
+            }, 2500);
+        }
+
+        async function pasteClipboard() {
+            const input = document.getElementById("urlInput");
+            try {
+                if (navigator.clipboard && navigator.clipboard.readText) {
+                    const text = await navigator.clipboard.readText();
+                    if (text && text.trim()) {
+                        input.value = text.trim();
+                        parseVideo();
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.log("浏览器剪贴板权限受限:", e);
+            }
+            // 优雅降级：聚焦并全选输入框，浮动气泡提示，绝不弹出阻塞报错窗口
+            input.focus();
+            input.select();
+            showToast("💡 浏览器限制直接读取剪贴板，请直接按 Ctrl + V 粘贴");
         }
 
         function selectQuality(btn, q) {
@@ -621,7 +659,7 @@
             }
 
             try {
-                const res = await fetch(`${s.serverUrl}/add-task`, {
+                const res = await fetch("/api/task/add", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload)
@@ -636,23 +674,34 @@
                     filePattern: filePattern
                 });
 
-                alert(`已成功添加至下载队列！\n目标清晰度: ${qualityLabel}\n保存格式: ${filePattern}\n保存路径: ${payload.WorkDir}`);
+                showToast(`🚀 已添加下载任务：${qualityLabel}`);
                 refreshTasks();
             } catch (e) {
-                alert("连接 BBDown 服务失败: " + e.message + "\n请确保已在终端执行: BBDown serve");
+                alert("提交任务失败: " + e.message);
             }
         }
 
         // 定时轮询任务状态
         async function refreshTasks() {
-            const s = getSettings();
             try {
-                const res = await fetch(`${s.serverUrl}/get-tasks/`);
+                const res = await fetch("/api/tasks");
                 if (!res.ok) return;
                 const data = await res.json();
                 renderTaskList(data.Running || [], data.Finished || []);
             } catch (e) {
                 console.log("轮询任务列表状态失败:", e);
+            }
+        }
+
+        async function clearTasks() {
+            if (!confirm("确定要清空已完成的任务下载记录吗？（不会删除已下载的文件）")) return;
+            try {
+                await fetch("/api/tasks/clear");
+                localStorage.removeItem("bbdown_task_metas");
+                refreshTasks();
+                showToast("已清空下载记录");
+            } catch (e) {
+                alert("清空失败: " + e.message);
             }
         }
 
@@ -662,6 +711,8 @@
 
             if (running.length === 0 && finished.length === 0) {
                 if (notice) notice.classList.remove("hidden");
+                listDiv.innerHTML = "";
+                if (notice) listDiv.appendChild(notice);
                 return;
             }
             if (notice) notice.classList.add("hidden");
@@ -695,12 +746,16 @@
                     ? `<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">${meta.qualityLabel}</span>` 
                     : "";
                 
-                let sizeInfo = "";
-                if (t.TotalDownloadedBytes > 0) {
+                // 优先展示来自磁盘检测到的真实文件体积与名称
+                let sizeDisplay = "";
+                let nameDisplay = t.ActualFileName || t.Title || t.Url;
+                if (t.ActualSize) {
+                    sizeDisplay = `<span class="text-xs text-slate-500 font-mono">体积: ${t.ActualSize}</span>`;
+                } else if (t.TotalDownloadedBytes > 0) {
                     const mb = (t.TotalDownloadedBytes / (1024 * 1024)).toFixed(1);
-                    sizeInfo = `<span class="text-xs text-slate-500 font-mono">体积: ${mb} MB</span>`;
+                    sizeDisplay = `<span class="text-xs text-slate-500 font-mono">体积: ${mb} MB</span>`;
                 } else if (t.IsSuccessful) {
-                    sizeInfo = `<span class="text-xs text-amber-600 font-medium">⚠️ 相同画质文件已存在 (无需重复下载)</span>`;
+                    sizeDisplay = `<span class="text-xs text-amber-600 font-medium">⚠️ 相同画质文件已存在 (无需重复下载)</span>`;
                 }
 
                 html += `
@@ -710,10 +765,10 @@
                             <i class="fa-solid ${t.IsSuccessful ? 'fa-check' : 'fa-xmark'}"></i>
                         </div>
                         <div class="flex flex-col truncate">
-                            <span class="text-sm font-semibold text-slate-800 truncate">${t.Title || t.Url}</span>
+                            <span class="text-sm font-semibold text-slate-800 truncate" title="${nameDisplay}">${nameDisplay}</span>
                             <div class="flex items-center gap-2 mt-0.5">
                                 ${qLabel}
-                                ${sizeInfo}
+                                ${sizeDisplay}
                             </div>
                         </div>
                     </div>

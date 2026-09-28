@@ -132,6 +132,23 @@ def get_user_info(cookie_str=None):
 
     return {"is_login": False}
 
+def find_matching_files(title, save_dir):
+    matches = []
+    if not os.path.exists(save_dir) or not title:
+        return matches
+    clean_title = re.sub(r'[\\/:*?"<>|]', '_', title)[:25]
+    try:
+        for fname in os.listdir(save_dir):
+            if fname.endswith((".mp4", ".m4a", ".m4s", ".mkv")):
+                if clean_title in fname or title[:15] in fname:
+                    fpath = os.path.join(save_dir, fname)
+                    if os.path.isfile(fpath):
+                        size_mb = os.path.getsize(fpath) / (1024 * 1024)
+                        matches.append({"name": fname, "size": f"{size_mb:.1f} MB", "path": fpath})
+    except Exception:
+        pass
+    return matches
+
 class WebUIHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=WEB_DIR, **kwargs)
@@ -146,9 +163,41 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+
+        # 0. 封面图片代理 (彻底解决 B 站图片防盗链 403 问题)
+        if path == "/api/image-proxy":
+            query = urllib.parse.parse_qs(parsed.query)
+            img_url = query.get("url", [""])[0].strip()
+            if not img_url:
+                self.send_response(400)
+                self.end_headers()
+                return
+            try:
+                img_req = urllib.request.Request(img_url, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Referer": "https://www.bilibili.com/"
+                })
+                with urllib.request.urlopen(img_req, timeout=6) as img_resp:
+                    content_type = img_resp.headers.get("Content-Type", "image/jpeg")
+                    img_data = img_resp.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", content_type)
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(img_data)
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
+            return
 
         # 1. 视频解析接口
         if path == "/api/parse":
@@ -250,6 +299,40 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json(500, {"code": -1, "message": str(e)})
 
+        # 7. 任务列表代理与自愈接口
+        if path == "/api/tasks":
+            tasks_data = {"Running": [], "Finished": []}
+            try:
+                tasks_req = urllib.request.Request(f"http://127.0.0.1:{SERVER_PORT}/get-tasks/")
+                with urllib.request.urlopen(tasks_req, timeout=3) as resp:
+                    tasks_data = json.loads(resp.read().decode("utf-8"))
+            except Exception as e:
+                # 出现 500 (通常是 BBDown 底层浮点 NaN 序列化崩溃)，自动调用清理自愈
+                try:
+                    urllib.request.urlopen(f"http://127.0.0.1:{SERVER_PORT}/remove-finished/", timeout=2)
+                except:
+                    pass
+
+            # 为已完成任务匹配本地实际文件体积
+            for t in tasks_data.get("Finished", []):
+                title = t.get("Title") or ""
+                if title:
+                    matched = find_matching_files(title, DEFAULT_DOWNLOAD_DIR)
+                    if matched:
+                        t["ActualFiles"] = matched
+                        t["ActualSize"] = matched[0]["size"]
+                        t["ActualFileName"] = matched[0]["name"]
+
+            return self.send_json(200, tasks_data)
+
+        # 8. 清空任务列表
+        if path == "/api/tasks/clear":
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{SERVER_PORT}/remove-finished/", timeout=3)
+                return self.send_json(200, {"code": 0, "message": "已清空任务记录"})
+            except Exception as e:
+                return self.send_json(500, {"code": -1, "message": str(e)})
+
         return super().do_GET()
 
     def do_POST(self):
@@ -260,6 +343,22 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         if path == "/api/user/logout":
             clear_cookie_files()
             return self.send_json(200, {"code": 0, "message": "已退出登录"})
+
+        # 添加下载任务接口代理
+        if path == "/api/task/add":
+            content_len = int(self.headers.get("Content-Length", 0))
+            post_body = self.rfile.read(content_len)
+            try:
+                req_data = json.loads(post_body.decode("utf-8"))
+                bbdown_req = urllib.request.Request(
+                    f"http://127.0.0.1:{SERVER_PORT}/add-task",
+                    data=json.dumps(req_data).encode("utf-8"),
+                    headers={"Content-Type": "application/json"}
+                )
+                with urllib.request.urlopen(bbdown_req, timeout=5) as resp:
+                    return self.send_json(200, {"code": 0, "message": "已成功添加至下载队列"})
+            except Exception as e:
+                return self.send_json(500, {"code": -1, "message": f"添加任务失败: {e}"})
 
         return super().do_POST()
 
