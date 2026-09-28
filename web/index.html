@@ -311,6 +311,7 @@
     </footer>
 
     <script>
+        let currentUser = null;
         let selectedQuality = "4K 超高清, 1080P 高码率, 1080P 高清";
         let currentVideoData = null;
         let qrCodeObj = null;
@@ -391,6 +392,7 @@
                 const userCard = document.getElementById("navUserCard");
 
                 if (data.is_login) {
+                    currentUser = data;
                     if (data.cookie) {
                         localStorage.setItem("bbdown_cookie", data.cookie);
                     }
@@ -406,6 +408,7 @@
                         badge.classList.add("hidden");
                     }
                 } else {
+                    currentUser = null;
                     loginBtn.classList.remove("hidden");
                     userCard.classList.add("hidden");
                 }
