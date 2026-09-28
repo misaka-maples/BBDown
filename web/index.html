@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
     <title>BiliDown - 哔哩哔哩视频在线解析下载</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -98,6 +99,19 @@
             <span class="flex items-center gap-1"><i class="fa-solid fa-bolt text-amber-500"></i> TV 接口免 412 风控</span>
             <span class="flex items-center gap-1"><i class="fa-solid fa-film text-blue-500"></i> 自动混流 MP4</span>
             <span class="flex items-center gap-1"><i class="fa-solid fa-shield-halved text-emerald-500"></i> 本地直接驱动</span>
+        </div>
+
+        <!-- 默认保存路径指示栏 -->
+        <div class="mt-4 flex items-center justify-between w-full px-4 py-2.5 bg-blue-50/80 border border-blue-100 rounded-xl text-xs text-slate-600">
+            <span class="flex items-center gap-1.5 font-medium truncate">
+                <i class="fa-regular fa-folder-open text-blue-600 text-sm"></i>
+                <span>默认下载保存路径：</span>
+                <span id="displaySaveDir" class="font-mono text-blue-700 bg-white px-2 py-0.5 rounded border border-blue-200">/home/maple/Downloads</span>
+            </span>
+            <button onclick="toggleSettingsModal()" class="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 transition whitespace-nowrap ml-2">
+                <i class="fa-solid fa-pen-to-square"></i>
+                <span>修改</span>
+            </button>
         </div>
 
         <!-- 加载中动画 -->
@@ -220,17 +234,24 @@
         function getSettings() {
             return {
                 serverUrl: localStorage.getItem("bbdown_server_url") || "http://127.0.0.1:58682",
-                saveDir: localStorage.getItem("bbdown_save_dir") || "",
+                saveDir: localStorage.getItem("bbdown_save_dir") || "/home/maple/Downloads",
                 cookie: localStorage.getItem("bbdown_cookie") || "",
                 tvMode: localStorage.getItem("bbdown_tv_mode") !== "false"
             };
         }
 
+        function updateSaveDirDisplay() {
+            const s = getSettings();
+            const el = document.getElementById("displaySaveDir");
+            if (el) el.innerText = s.saveDir;
+        }
+
         function saveSettings() {
             localStorage.setItem("bbdown_server_url", document.getElementById("settingServerUrl").value.trim());
-            localStorage.setItem("bbdown_save_dir", document.getElementById("settingSaveDir").value.trim());
+            localStorage.setItem("bbdown_save_dir", document.getElementById("settingSaveDir").value.trim() || "/home/maple/Downloads");
             localStorage.setItem("bbdown_cookie", document.getElementById("settingCookie").value.trim());
             localStorage.setItem("bbdown_tv_mode", document.getElementById("settingTvMode").checked);
+            updateSaveDirDisplay();
             toggleSettingsModal();
             alert("配置已保存！");
         }
@@ -262,27 +283,17 @@
             selectedQuality = q;
         }
 
-        // 解析视频元数据
+        // 解析视频元数据 (通过本地 /api/parse 解决 CORS 跨域)
         async function parseVideo() {
             const rawUrl = document.getElementById("urlInput").value.trim();
             if (!rawUrl) return alert("请输入视频链接！");
-
-            const bvidMatch = rawUrl.match(/BV[0-9A-Za-z]{10}/i);
-            const aidMatch = rawUrl.match(/av(\d+)/i);
-            const idParam = bvidMatch ? `bvid=${bvidMatch[0]}` : (aidMatch ? `aid=${aidMatch[1]}` : null);
 
             document.getElementById("loading").classList.remove("hidden");
             document.getElementById("resultCard").classList.add("hidden");
 
             try {
-                // 如果是直接能够提取出 BV/AV 号，直接请求公开信息
-                let res;
-                if (idParam) {
-                    res = await fetch(`https://api.bilibili.com/x/web-interface/view?${idParam}`);
-                } else {
-                    // 若是短链 b23.tv，直接提交给后端解析
-                    res = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${rawUrl}`);
-                }
+                // 本地代理请求，避免浏览器直接请求 B 站报 NetworkError CORS 错误
+                const res = await fetch(`/api/parse?url=${encodeURIComponent(rawUrl)}`);
                 const data = await res.json();
                 if (data.code !== 0) throw new Error(data.message || "B 站接口返回错误");
 
@@ -294,18 +305,17 @@
                     bvid: v.bvid,
                     aid: v.aid,
                     duration: formatDuration(v.duration),
-                    owner: v.owner.name
+                    owner: v.owner
                 };
 
                 document.getElementById("videoTitle").innerText = v.title;
-                document.getElementById("authorName").innerText = v.owner.name;
+                document.getElementById("authorName").innerText = v.owner;
                 document.getElementById("videoBvid").innerText = v.bvid;
                 document.getElementById("videoDuration").innerText = currentVideoData.duration;
-                // B 站防盗链替换为 images.weserv.nl 代理或直接展示
-                document.getElementById("videoCover").src = v.pic.replace("http://", "https://");
+                document.getElementById("videoCover").src = v.pic;
                 document.getElementById("resultCard").classList.remove("hidden");
             } catch (err) {
-                alert("解析失败: " + err.message + "\n可以直接点击下载由后台解析。");
+                alert("解析提示: " + err.message + "\n可以直接点击下载，由后台直接解析下载。");
                 currentVideoData = { url: rawUrl, title: rawUrl, pic: "", bvid: rawUrl, owner: "未知" };
                 document.getElementById("resultCard").classList.remove("hidden");
             } finally {
@@ -329,10 +339,10 @@
                 UseTvApi: s.tvMode,
                 UserAgent: "curl/8.5.0",
                 DfnPriority: selectedQuality === "audio-only" ? null : selectedQuality,
-                AudioOnly: selectedQuality === "audio-only"
+                AudioOnly: selectedQuality === "audio-only",
+                WorkDir: s.saveDir || "/home/maple/Downloads"
             };
 
-            if (s.saveDir) payload.WorkDir = s.saveDir;
             if (s.cookie) payload.Cookie = `SESSDATA=${s.cookie}`;
 
             try {
@@ -342,7 +352,7 @@
                     body: JSON.stringify(payload)
                 });
                 if (!res.ok) throw new Error(await res.text());
-                alert("已成功添加至下载队列！");
+                alert("已成功添加至下载队列！\n下载将保存至: " + payload.WorkDir);
                 refreshTasks();
             } catch (e) {
                 alert("连接 BBDown 服务失败: " + e.message + "\n请确保已在终端执行: BBDown serve");
@@ -413,7 +423,8 @@
             listDiv.innerHTML = html;
         }
 
-        // 页面初始化自动轮询
+        // 页面初始化
+        updateSaveDirDisplay();
         setInterval(refreshTasks, 3000);
         refreshTasks();
     </script>
