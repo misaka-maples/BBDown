@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using System.IO;
 namespace BBDown;
 
 public class BBDownApiServer
@@ -42,6 +43,25 @@ public class BBDownApiServer
         });
         app = builder.Build();
         app.UseCors("AllowAnyOrigin");
+        app.MapGet("/", async (HttpContext context) =>
+        {
+            string[] possiblePaths = [
+                Path.Combine(AppContext.BaseDirectory, "web", "index.html"),
+                Path.Combine(Directory.GetCurrentDirectory(), "web", "index.html"),
+                Path.Combine(Directory.GetCurrentDirectory(), "index.html")
+            ];
+            foreach (var path in possiblePaths)
+            {
+                if (File.Exists(path))
+                {
+                    context.Response.ContentType = "text/html; charset=utf-8";
+                    await context.Response.SendFileAsync(path);
+                    return;
+                }
+            }
+            context.Response.ContentType = "text/html; charset=utf-8";
+            await context.Response.WriteAsync("<h1>BBDown Web UI</h1><p>请将 web/index.html 放置于运行目录下。</p>");
+        });
         var taskStatusApi = app.MapGroup("/get-tasks");
         taskStatusApi.MapGet("/", handler: () => Results.Json(new DownloadTaskCollection(runningTasks, finishedTasks), AppJsonSerializerContext.Default.DownloadTaskCollection));
         taskStatusApi.MapGet("/running", handler: () => Results.Json(runningTasks, AppJsonSerializerContext.Default.ListDownloadTask));
