@@ -44,12 +44,12 @@ def main():
 
     # 2. 启动 Web 前端服务
     httpd = HTTPServer(("0.0.0.0", WEB_PORT), WebUIHandler)
-    print("=" * 60)
-    print(f"🎉 BiliDown Web UI 已成功启动！")
-    print(f"👉 请在浏览器中打开: http://localhost:{WEB_PORT}")
-    print(f"👉 本地网络访问地址: http://127.0.0.1:{WEB_PORT}")
-    print("=" * 60)
-    print("按 Ctrl+C 停止服务...")
+    print("=" * 60, flush=True)
+    print(f"🎉 BiliDown Web UI 已成功启动！", flush=True)
+    print(f"👉 请在浏览器中打开: http://localhost:{WEB_PORT}", flush=True)
+    print(f"👉 本地网络访问地址: http://127.0.0.1:{WEB_PORT}", flush=True)
+    print("=" * 60, flush=True)
+    print("按 Ctrl+C 停止服务...", flush=True)
 
     def cleanup(sig=None, frame=None):
         print("\n[*] 正在关闭服务...")
