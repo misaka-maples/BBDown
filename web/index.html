@@ -109,6 +109,7 @@
                     <i class="fa-solid fa-link text-lg"></i>
                 </div>
                 <input id="urlInput" type="text" 
+                    onkeydown="if(event.key==='Enter') parseVideo()"
                     placeholder="粘贴 B 站视频链接，例如 https://www.bilibili.com/video/BV1... 或 b23.tv 短链" 
                     class="w-full py-3 px-2 bg-transparent text-slate-800 placeholder-slate-400 outline-none text-base font-normal">
                 <button onclick="pasteClipboard()" class="hidden sm:flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition" title="粘贴剪贴板">
@@ -122,8 +123,16 @@
             </div>
         </div>
 
+        <!-- 快捷测试示例视频 -->
+        <div class="flex flex-wrap items-center justify-center gap-2 mt-2.5 text-xs text-slate-500">
+            <span>💡 快捷示例：</span>
+            <button onclick="loadSample('https://www.bilibili.com/video/BV1is41177V4')" class="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition">4K VR过山车</button>
+            <button onclick="loadSample('https://www.bilibili.com/video/BV1HBq9B2EX3')" class="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition">8KVR全景</button>
+            <button onclick="loadSample('https://www.bilibili.com/video/BV1xx411c7mD')" class="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition">经典老片</button>
+        </div>
+
         <!-- 快捷选项提示 -->
-        <div class="flex items-center justify-center gap-4 mt-3 text-xs text-slate-500">
+        <div class="flex items-center justify-center gap-4 mt-2.5 text-xs text-slate-500">
             <span class="flex items-center gap-1"><i class="fa-solid fa-bolt text-amber-500"></i> TV 接口免 412 风控</span>
             <span class="flex items-center gap-1"><i class="fa-solid fa-film text-blue-500"></i> 自动混流 MP4</span>
             <span class="flex items-center gap-1"><i class="fa-solid fa-crown text-pink-500"></i> 支持大会员 4K/原画</span>
@@ -486,6 +495,11 @@
             selectedQuality = q;
         }
 
+        function loadSample(url) {
+            document.getElementById("urlInput").value = url;
+            parseVideo();
+        }
+
         // 解析视频元数据 (通过本地 /api/parse 解决 CORS 跨域)
         async function parseVideo() {
             const rawUrl = document.getElementById("urlInput").value.trim();
@@ -515,12 +529,12 @@
                 document.getElementById("authorName").innerText = v.owner;
                 document.getElementById("videoBvid").innerText = v.bvid;
                 document.getElementById("videoDuration").innerText = currentVideoData.duration;
-                document.getElementById("videoCover").src = v.pic;
+                // 使用后端反代图片，确保 100% 能够加载 B 站图片，防止防盗链与 403
+                document.getElementById("videoCover").src = `/api/image-proxy?url=${encodeURIComponent(v.pic)}`;
                 document.getElementById("resultCard").classList.remove("hidden");
             } catch (err) {
-                alert("解析提示: " + err.message + "\n可以直接点击下载，由后台直接解析下载。");
-                currentVideoData = { url: rawUrl, title: rawUrl, pic: "", bvid: rawUrl, owner: "未知" };
-                document.getElementById("resultCard").classList.remove("hidden");
+                document.getElementById("resultCard").classList.add("hidden");
+                alert("⚠️ 视频解析失败: " + err.message + "\n\n提示：如果提示【啥都木有】，说明该视频在 B 站不存在或已被下架删除。");
             } finally {
                 document.getElementById("loading").classList.add("hidden");
             }

@@ -374,3 +374,7 @@ debug_*.json
 /BBDown/*.mp4
 /BBDown/*.xml
 /BBDown/*.ass
+*.mp4
+*.m4s
+*.aria2
+BBDown.data
