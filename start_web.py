@@ -146,41 +146,9 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
 
-    def end_headers(self):
-        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-        self.send_header("Pragma", "no-cache")
-        self.send_header("Expires", "0")
-        super().end_headers()
-
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
-
-        # 0. 封面图片代理 (彻底解决 B 站图片防盗链 403 问题)
-        if path == "/api/image-proxy":
-            query = urllib.parse.parse_qs(parsed.query)
-            img_url = query.get("url", [""])[0].strip()
-            if not img_url:
-                self.send_response(400)
-                self.end_headers()
-                return
-            try:
-                img_req = urllib.request.Request(img_url, headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "Referer": "https://www.bilibili.com/"
-                })
-                with urllib.request.urlopen(img_req, timeout=6) as img_resp:
-                    content_type = img_resp.headers.get("Content-Type", "image/jpeg")
-                    img_data = img_resp.read()
-                    self.send_response(200)
-                    self.send_header("Content-Type", content_type)
-                    self.send_header("Access-Control-Allow-Origin", "*")
-                    self.end_headers()
-                    self.wfile.write(img_data)
-            except Exception as e:
-                self.send_response(500)
-                self.end_headers()
-            return
 
         # 1. 视频解析接口
         if path == "/api/parse":
@@ -267,7 +235,20 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         # 5. 获取当前用户登录态
         if path == "/api/user/status":
             info = get_user_info()
+            info["cookie"] = get_saved_cookie()
             return self.send_json(200, info)
+
+        # 6. 打开本地保存目录
+        if path == "/api/open-folder":
+            query = urllib.parse.parse_qs(parsed.query)
+            target_dir = query.get("dir", [DEFAULT_DOWNLOAD_DIR])[0].strip()
+            if not os.path.exists(target_dir):
+                target_dir = DEFAULT_DOWNLOAD_DIR
+            try:
+                subprocess.Popen(["xdg-open", target_dir])
+                return self.send_json(200, {"code": 0, "message": "已在系统文件管理器中打开"})
+            except Exception as e:
+                return self.send_json(500, {"code": -1, "message": str(e)})
 
         return super().do_GET()
 

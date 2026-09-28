@@ -109,7 +109,6 @@
                     <i class="fa-solid fa-link text-lg"></i>
                 </div>
                 <input id="urlInput" type="text" 
-                    onkeydown="if(event.key==='Enter') parseVideo()"
                     placeholder="粘贴 B 站视频链接，例如 https://www.bilibili.com/video/BV1... 或 b23.tv 短链" 
                     class="w-full py-3 px-2 bg-transparent text-slate-800 placeholder-slate-400 outline-none text-base font-normal">
                 <button onclick="pasteClipboard()" class="hidden sm:flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition" title="粘贴剪贴板">
@@ -123,32 +122,30 @@
             </div>
         </div>
 
-        <!-- 快捷测试示例视频 -->
-        <div class="flex flex-wrap items-center justify-center gap-2 mt-2.5 text-xs text-slate-500">
-            <span>💡 快捷示例：</span>
-            <button onclick="loadSample('https://www.bilibili.com/video/BV1is41177V4')" class="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition">4K VR过山车</button>
-            <button onclick="loadSample('https://www.bilibili.com/video/BV1HBq9B2EX3')" class="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition">8KVR全景</button>
-            <button onclick="loadSample('https://www.bilibili.com/video/BV1xx411c7mD')" class="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition">经典老片</button>
-        </div>
-
         <!-- 快捷选项提示 -->
-        <div class="flex items-center justify-center gap-4 mt-2.5 text-xs text-slate-500">
+        <div class="flex items-center justify-center gap-4 mt-3 text-xs text-slate-500">
             <span class="flex items-center gap-1"><i class="fa-solid fa-bolt text-amber-500"></i> TV 接口免 412 风控</span>
             <span class="flex items-center gap-1"><i class="fa-solid fa-film text-blue-500"></i> 自动混流 MP4</span>
             <span class="flex items-center gap-1"><i class="fa-solid fa-crown text-pink-500"></i> 支持大会员 4K/原画</span>
         </div>
 
         <!-- 默认保存路径指示栏 -->
-        <div class="mt-4 flex items-center justify-between w-full px-4 py-2.5 bg-blue-50/80 border border-blue-100 rounded-xl text-xs text-slate-600">
+        <div class="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 w-full px-4 py-2.5 bg-blue-50/80 border border-blue-100 rounded-xl text-xs text-slate-600">
             <span class="flex items-center gap-1.5 font-medium truncate">
                 <i class="fa-regular fa-folder-open text-blue-600 text-sm"></i>
                 <span>默认下载保存路径：</span>
                 <span id="displaySaveDir" class="font-mono text-blue-700 bg-white px-2 py-0.5 rounded border border-blue-200">/home/maple/Downloads</span>
             </span>
-            <button onclick="toggleSettingsModal()" class="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 transition whitespace-nowrap ml-2">
-                <i class="fa-solid fa-pen-to-square"></i>
-                <span>修改</span>
-            </button>
+            <div class="flex items-center gap-2 self-end sm:self-center">
+                <button onclick="openDownloadFolder()" class="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 transition whitespace-nowrap">
+                    <i class="fa-regular fa-folder-open"></i>
+                    <span>打开目录</span>
+                </button>
+                <button onclick="toggleSettingsModal()" class="text-slate-500 hover:text-slate-700 font-medium flex items-center gap-1 transition whitespace-nowrap ml-2">
+                    <i class="fa-solid fa-pen-to-square"></i>
+                    <span>修改</span>
+                </button>
+            </div>
         </div>
 
         <!-- 加载中动画 -->
@@ -296,6 +293,13 @@
                     <span class="text-xs font-medium text-slate-700">启用 TV 模式 (推荐，防 412 拦截)</span>
                     <input id="settingTvMode" type="checkbox" checked class="w-4 h-4 text-blue-600 rounded">
                 </div>
+                <div class="flex items-center justify-between pt-2 border-t border-slate-100">
+                    <div>
+                        <span class="text-xs font-medium text-slate-700 block">文件名加入画质后缀 (如 [720P 高清])</span>
+                        <span class="text-[11px] text-slate-400">防止不同画质覆盖同名文件，避免被跳过下载</span>
+                    </div>
+                    <input id="settingAddDfn" type="checkbox" checked class="w-4 h-4 text-blue-600 rounded">
+                </div>
             </div>
             <div class="mt-6 flex justify-end gap-2">
                 <button onclick="saveSettings()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-4 py-2 rounded-lg font-medium transition">保存配置</button>
@@ -320,8 +324,35 @@
                 serverUrl: localStorage.getItem("bbdown_server_url") || "http://127.0.0.1:58682",
                 saveDir: localStorage.getItem("bbdown_save_dir") || "/home/maple/Downloads",
                 cookie: localStorage.getItem("bbdown_cookie") || "",
-                tvMode: localStorage.getItem("bbdown_tv_mode") !== "false"
+                tvMode: localStorage.getItem("bbdown_tv_mode") !== "false",
+                addDfn: localStorage.getItem("bbdown_add_dfn") !== "false"
             };
+        }
+
+        async function openDownloadFolder() {
+            const s = getSettings();
+            try {
+                const res = await fetch(`/api/open-folder?dir=${encodeURIComponent(s.saveDir)}`);
+                const data = await res.json();
+                if (data.code !== 0) alert(data.message || "打开文件夹失败");
+            } catch (e) {
+                alert("请求打开文件夹失败: " + e.message);
+            }
+        }
+
+        function saveTaskMeta(id, meta) {
+            try {
+                const metas = JSON.parse(localStorage.getItem("bbdown_task_metas") || "{}");
+                metas[id] = meta;
+                localStorage.setItem("bbdown_task_metas", JSON.stringify(metas));
+            } catch (e) {}
+        }
+
+        function getTaskMeta(id) {
+            try {
+                const metas = JSON.parse(localStorage.getItem("bbdown_task_metas") || "{}");
+                return metas[id];
+            } catch (e) { return null; }
         }
 
         function updateSaveDirDisplay() {
@@ -335,6 +366,7 @@
             localStorage.setItem("bbdown_save_dir", document.getElementById("settingSaveDir").value.trim() || "/home/maple/Downloads");
             localStorage.setItem("bbdown_cookie", document.getElementById("settingCookie").value.trim());
             localStorage.setItem("bbdown_tv_mode", document.getElementById("settingTvMode").checked);
+            localStorage.setItem("bbdown_add_dfn", document.getElementById("settingAddDfn").checked);
             updateSaveDirDisplay();
             toggleSettingsModal();
             checkUserStatus();
@@ -349,6 +381,7 @@
             document.getElementById("settingSaveDir").value = s.saveDir;
             document.getElementById("settingCookie").value = s.cookie;
             document.getElementById("settingTvMode").checked = s.tvMode;
+            document.getElementById("settingAddDfn").checked = s.addDfn;
         }
 
         // 检查用户登录状态
@@ -360,6 +393,9 @@
                 const userCard = document.getElementById("navUserCard");
 
                 if (data.is_login) {
+                    if (data.cookie) {
+                        localStorage.setItem("bbdown_cookie", data.cookie);
+                    }
                     loginBtn.classList.add("hidden");
                     userCard.classList.remove("hidden");
                     document.getElementById("navUserName").innerText = data.uname;
@@ -445,6 +481,9 @@
 
                 if (data.code === 0) {
                     // 登录成功！
+                    if (data.cookie) {
+                        localStorage.setItem("bbdown_cookie", data.cookie);
+                    }
                     clearInterval(qrPollTimer);
                     qrPollTimer = null;
                     statusText.innerText = "🎉 登录成功！正在同步配置...";
@@ -534,7 +573,7 @@
                 document.getElementById("resultCard").classList.remove("hidden");
             } catch (err) {
                 document.getElementById("resultCard").classList.add("hidden");
-                alert("⚠️ 视频解析失败: " + err.message + "\n\n提示：如果提示【啥都木有】，说明该视频在 B 站不存在或已被下架删除。");
+                alert("⚠️ 视频解析失败: " + err.message + "\n\n提示：若提示【啥都木有】，说明该视频在 B 站已被删除下架或 BV 号输错。");
             } finally {
                 document.getElementById("loading").classList.add("hidden");
             }
@@ -551,16 +590,35 @@
             if (!currentVideoData) return alert("请先解析视频！");
             const s = getSettings();
             
+            // 确定画质标签与文件名模式
+            let qualityLabel = selectedQuality;
+            let filePattern = "<videoTitle>";
+            if (s.addDfn) {
+                if (selectedQuality === "audio-only") {
+                    filePattern = "<videoTitle> [仅音频]";
+                    qualityLabel = "仅音频 (M4A)";
+                } else {
+                    filePattern = "<videoTitle> [<dfn>]";
+                    if (selectedQuality.includes("4K")) qualityLabel = "4K / 1080P 原画";
+                    else if (selectedQuality.includes("720P")) qualityLabel = "720P 高清";
+                    else if (selectedQuality.includes("480P")) qualityLabel = "480P 标清";
+                }
+            }
+
             const payload = {
                 Url: currentVideoData.url,
                 UseTvApi: s.tvMode,
                 UserAgent: "curl/8.5.0",
                 DfnPriority: selectedQuality === "audio-only" ? null : selectedQuality,
                 AudioOnly: selectedQuality === "audio-only",
+                FilePattern: filePattern,
                 WorkDir: s.saveDir || "/home/maple/Downloads"
             };
 
-            if (s.cookie) payload.Cookie = `SESSDATA=${s.cookie}`;
+            const cookieToUse = s.cookie || localStorage.getItem("bbdown_cookie") || "";
+            if (cookieToUse) {
+                payload.Cookie = cookieToUse.startsWith("SESSDATA=") ? cookieToUse : `SESSDATA=${cookieToUse}`;
+            }
 
             try {
                 const res = await fetch(`${s.serverUrl}/add-task`, {
@@ -569,7 +627,16 @@
                     body: JSON.stringify(payload)
                 });
                 if (!res.ok) throw new Error(await res.text());
-                alert("已成功添加至下载队列！\n下载将保存至: " + payload.WorkDir);
+
+                // 记录任务元数据
+                const taskId = (currentVideoData.aid || currentVideoData.bvid || "").toString();
+                saveTaskMeta(taskId, {
+                    title: currentVideoData.title,
+                    qualityLabel: qualityLabel,
+                    filePattern: filePattern
+                });
+
+                alert(`已成功添加至下载队列！\n目标清晰度: ${qualityLabel}\n保存格式: ${filePattern}\n保存路径: ${payload.WorkDir}`);
                 refreshTasks();
             } catch (e) {
                 alert("连接 BBDown 服务失败: " + e.message + "\n请确保已在终端执行: BBDown serve");
@@ -623,17 +690,41 @@
 
             // 渲染已完成的任务
             finished.forEach(t => {
+                const meta = getTaskMeta(t.Aid) || {};
+                const qLabel = meta.qualityLabel 
+                    ? `<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">${meta.qualityLabel}</span>` 
+                    : "";
+                
+                let sizeInfo = "";
+                if (t.TotalDownloadedBytes > 0) {
+                    const mb = (t.TotalDownloadedBytes / (1024 * 1024)).toFixed(1);
+                    sizeInfo = `<span class="text-xs text-slate-500 font-mono">体积: ${mb} MB</span>`;
+                } else if (t.IsSuccessful) {
+                    sizeInfo = `<span class="text-xs text-amber-600 font-medium">⚠️ 相同画质文件已存在 (无需重复下载)</span>`;
+                }
+
                 html += `
-                <div class="bg-white/80 p-3.5 rounded-xl border border-slate-100 shadow-sm flex items-center justify-between">
-                    <div class="flex items-center gap-3 truncate max-w-lg">
-                        <div class="w-7 h-7 rounded-lg ${t.IsSuccessful ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'} flex items-center justify-center text-xs flex-shrink-0">
+                <div class="bg-white/80 p-3.5 rounded-xl border border-slate-100 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="flex items-center gap-3 truncate max-w-xl">
+                        <div class="w-8 h-8 rounded-lg ${t.IsSuccessful ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'} flex items-center justify-center text-xs flex-shrink-0">
                             <i class="fa-solid ${t.IsSuccessful ? 'fa-check' : 'fa-xmark'}"></i>
                         </div>
-                        <span class="text-sm font-medium text-slate-800 truncate">${t.Title || t.Url}</span>
+                        <div class="flex flex-col truncate">
+                            <span class="text-sm font-semibold text-slate-800 truncate">${t.Title || t.Url}</span>
+                            <div class="flex items-center gap-2 mt-0.5">
+                                ${qLabel}
+                                ${sizeInfo}
+                            </div>
+                        </div>
                     </div>
-                    <span class="text-xs px-2.5 py-1 rounded-full font-medium ${t.IsSuccessful ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}">
-                        ${t.IsSuccessful ? '已完成' : '失败'}
-                    </span>
+                    <div class="flex items-center gap-2 self-end sm:self-center">
+                        <button onclick="openDownloadFolder()" class="text-xs text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-medium">
+                            <i class="fa-regular fa-folder-open"></i> <span>打开目录</span>
+                        </button>
+                        <span class="text-xs px-2.5 py-1 rounded-full font-medium ${t.IsSuccessful ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}">
+                            ${t.IsSuccessful ? '已完成' : '失败'}
+                        </span>
+                    </div>
                 </div>`;
             });
 
