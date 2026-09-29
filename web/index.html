@@ -72,71 +72,48 @@
         
         <!-- 用户登录态 & 工具栏 -->
         <div class="flex items-center gap-2 sm:gap-3">
-            <!-- 未登录系统账号按钮组 -->
-            <div id="navAuthBtns" class="flex items-center gap-1.5 sm:gap-2">
+            <!-- 未登录 B 站状态栏 (默认 TV 免登录通道) -->
+            <div id="navBiliUnlogged" class="flex items-center gap-1.5 sm:gap-2">
+                <div class="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-slate-100/90 text-slate-600 text-xs font-medium border border-slate-200/80">
+                    <i class="fa-solid fa-tv text-blue-500"></i>
+                    <span>TV 免登录 (最高1080P)</span>
+                </div>
                 <button onclick="openLoginModal()" class="flex items-center gap-1.5 bg-gradient-to-r from-bili to-blue-600 hover:from-sky-500 hover:to-blue-700 text-white text-xs sm:text-sm font-semibold px-3 sm:px-4 py-2 rounded-full shadow-md shadow-blue-500/20 transition active:scale-95">
                     <i class="fa-solid fa-qrcode"></i>
-                    <span>扫码登录</span>
-                </button>
-                <button onclick="openAuthModal('login')" class="flex items-center gap-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 text-xs sm:text-sm font-semibold px-2.5 sm:px-3 py-2 rounded-full shadow-sm transition active:scale-95">
-                    <i class="fa-solid fa-key"></i>
-                    <span class="hidden sm:inline">账号密码</span>
+                    <span>📱 扫码登录 B 站</span>
                 </button>
             </div>
 
-            <!-- 已登录系统账号胶囊与下拉菜单 -->
-            <div id="navUserPill" class="hidden relative">
-                <button onclick="toggleUserDropdown(event)" class="flex items-center gap-2 bg-white/95 border border-slate-200/90 pl-2 pr-3 py-1.5 rounded-full shadow-sm hover:border-blue-400 transition cursor-pointer">
-                    <img id="navBiliAvatar" src="" class="hidden w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover border border-slate-200">
-                    <div id="navDefaultAvatar" class="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">
-                        <i class="fa-regular fa-user"></i>
-                    </div>
+            <!-- 已登录 B 站用户状态胶囊与下拉菜单 -->
+            <div id="navBiliLogged" class="hidden relative">
+                <button onclick="toggleUserDropdown(event)" class="flex items-center gap-2 bg-white/95 border border-slate-200/90 pl-1.5 pr-3 py-1 rounded-full shadow-sm hover:border-pink-300 transition cursor-pointer">
+                    <img id="navBiliAvatar" src="" class="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover border border-pink-200">
                     <div class="flex flex-col text-left">
                         <div class="flex items-center gap-1 sm:gap-1.5">
-                            <span id="navSystemName" class="text-xs font-bold text-slate-800 max-w-[80px] sm:max-w-[110px] truncate">用户</span>
-                            <span id="navVipBadge" class="hidden text-[10px] font-bold px-1.5 py-0.2 rounded bg-pink-100 text-pink-600">大会员</span>
+                            <span id="navBiliName" class="text-xs font-bold text-slate-800 max-w-[80px] sm:max-w-[120px] truncate">B站用户</span>
+                            <span id="navBiliVipBadge" class="hidden text-[10px] font-bold px-1.5 py-0.2 rounded bg-pink-100 text-pink-600">大会员</span>
                         </div>
                     </div>
                     <i class="fa-solid fa-chevron-down text-[10px] text-slate-400 ml-0.5"></i>
                 </button>
 
                 <!-- 用户菜单下拉弹窗 -->
-                <div id="userDropdownMenu" class="hidden absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-slate-100 p-3 z-50 animate-in fade-in zoom-in-95 duration-100">
+                <div id="userDropdownMenu" class="hidden absolute right-0 mt-2 w-60 bg-white rounded-2xl shadow-2xl border border-slate-100 p-3 z-50 animate-in fade-in zoom-in-95 duration-100">
                     <div class="px-2 py-1.5 border-b border-slate-100 mb-2">
                         <div class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                            <i class="fa-solid fa-shield-halved text-blue-500"></i>
-                            <span id="dropdownUsername">--</span>
+                            <i class="fa-brands fa-bilibili text-pink-500"></i>
+                            <span id="dropdownBiliName">已登录</span>
                         </div>
-                        <div class="text-[11px] text-slate-400 font-mono truncate mt-0.5" id="dropdownSaveDir" title="">
-                            目录: ...
-                        </div>
+                        <div class="text-[11px] text-slate-400 mt-0.5" id="dropdownBiliMid">UID: --</div>
                     </div>
 
-                    <!-- B 站账号绑定状态条目 -->
-                    <div class="px-2 py-2 rounded-xl bg-slate-50 border border-slate-100 mb-2 text-xs">
-                        <div class="flex items-center justify-between">
-                            <span class="text-slate-500 font-medium">B 站账号：</span>
-                            <span id="biliBindStatus" class="font-bold text-slate-700">未绑定</span>
-                        </div>
-                        <div class="flex items-center justify-end gap-2 mt-2 pt-1 border-t border-slate-200/60">
-                            <button id="biliLoginActionBtn" onclick="openLoginModal()" class="text-[11px] text-blue-600 font-semibold hover:underline flex items-center gap-1">
-                                <i class="fa-solid fa-qrcode"></i>
-                                <span>扫码绑定</span>
-                            </button>
-                            <button id="biliLogoutActionBtn" onclick="logoutBili()" class="hidden text-[11px] text-rose-500 font-semibold hover:underline flex items-center gap-1">
-                                <i class="fa-solid fa-link-slash"></i>
-                                <span>解绑</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <button onclick="toggleSettingsModal()" class="w-full text-left px-2.5 py-2 text-xs text-slate-700 hover:bg-slate-50 rounded-xl transition flex items-center gap-2">
+                    <button onclick="toggleSettingsModal(); closeUserDropdown();" class="w-full text-left px-2.5 py-2 text-xs text-slate-700 hover:bg-slate-50 rounded-xl transition flex items-center gap-2">
                         <i class="fa-solid fa-gear text-slate-400"></i>
-                        <span>偏好设置与自定义路径</span>
+                        <span>下载偏好设置</span>
                     </button>
-                    <button onclick="logoutSystem()" class="w-full text-left px-2.5 py-2 text-xs text-rose-600 hover:bg-rose-50 rounded-xl transition flex items-center gap-2 mt-1">
+                    <button onclick="logoutBili()" class="w-full text-left px-2.5 py-2 text-xs text-rose-600 hover:bg-rose-50 rounded-xl transition flex items-center gap-2 mt-1">
                         <i class="fa-solid fa-arrow-right-from-bracket"></i>
-                        <span>退出系统账号</span>
+                        <span>退出 B 站登录</span>
                     </button>
                 </div>
             </div>
@@ -242,7 +219,11 @@
 
                 <!-- 清晰度与下载按钮 -->
                 <div class="mt-4 sm:mt-5 pt-4 border-t border-slate-100">
-                    <label class="text-xs font-semibold text-slate-500 block mb-2">选择下载画质：</label>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="text-xs font-semibold text-slate-500 block">选择下载画质：</label>
+                        <span id="qualityModeBanner" class="text-[11px] font-medium text-slate-500"></span>
+                    </div>
+                    <div id="qualityUnlockNotice" class="hidden mb-3"></div>
                     <div id="qualityOptions" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-4">
                         <!-- 动态生成 -->
                     </div>
@@ -292,74 +273,7 @@
         </div>
     </main>
 
-    <!-- 1. 系统账号登录 / 注册弹窗 -->
-    <div id="authModal" class="hidden fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 flex flex-col">
-            <div class="flex justify-between items-center pb-3 border-b border-slate-100">
-                <div class="flex items-center gap-2">
-                    <div class="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center text-sm font-bold">
-                        <i class="fa-solid fa-user-lock"></i>
-                    </div>
-                    <span class="font-bold text-slate-900 text-base" id="authModalTitle">登录系统账号</span>
-                </div>
-                <button onclick="closeAuthModal()" class="text-slate-400 hover:text-slate-600 p-1">
-                    <i class="fa-solid fa-xmark text-lg"></i>
-                </button>
-            </div>
-
-            <!-- Tab 切换 -->
-            <div class="flex bg-slate-100 p-1 rounded-xl mt-4 mb-4">
-                <button id="authTabLogin" onclick="switchAuthTab('login')" class="flex-1 py-1.5 text-xs font-semibold rounded-lg transition bg-white text-blue-600 shadow-sm">
-                    账号登录
-                </button>
-                <button id="authTabRegister" onclick="switchAuthTab('register')" class="flex-1 py-1.5 text-xs font-semibold rounded-lg transition text-slate-500 hover:text-slate-800">
-                    快速注册
-                </button>
-            </div>
-
-            <!-- 登录表单 -->
-            <form id="loginForm" onsubmit="handleLogin(event)" class="space-y-3.5">
-                <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1">用户名</label>
-                    <input id="loginUsername" type="text" required placeholder="如: admin 或您的用户名" class="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500">
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1">登录密码</label>
-                    <input id="loginPassword" type="password" required placeholder="请输入密码" class="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500">
-                </div>
-                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs py-2.5 rounded-xl shadow-md shadow-blue-500/20 transition active:scale-98">
-                    立即登录
-                </button>
-                <p class="text-[11px] text-slate-400 text-center pt-1">
-                    💡 初始默认管理员：<code>admin</code> / <code>admin123</code>
-                </p>
-            </form>
-
-            <!-- 注册表单 -->
-            <form id="registerForm" onsubmit="handleRegister(event)" class="hidden space-y-3.5">
-                <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1">新用户名</label>
-                    <input id="regUsername" type="text" required placeholder="支持字母、数字与中文 (不少于2位)" class="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500">
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1">设置密码</label>
-                    <input id="regPassword" type="password" required placeholder="不少于4位字符" class="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500">
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold text-slate-600 mb-1">确认密码</label>
-                    <input id="regPasswordConfirm" type="password" required placeholder="请再次输入密码" class="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500">
-                </div>
-                <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-xs py-2.5 rounded-xl shadow-md shadow-blue-500/20 transition active:scale-98">
-                    注册并直接登录
-                </button>
-                <p class="text-[11px] text-slate-400 text-center leading-relaxed pt-1">
-                    🔒 注册后系统将自动为您创建独立隔离的保存目录与独立 B 站配置。
-                </p>
-            </form>
-        </div>
-    </div>
-
-    <!-- 2. 视频在线播放 / 手机预览弹窗 (支持 RFC 7233 移动端流式拖拽播放) -->
+    <!-- 1. 视频在线播放 / 手机预览弹窗 (支持 RFC 7233 移动端流式拖拽播放) -->
     <div id="videoPlayerModal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6">
         <div class="bg-white rounded-2xl sm:rounded-3xl max-w-3xl w-full p-4 sm:p-5 shadow-2xl border border-slate-100 flex flex-col max-h-[92vh]">
             <div class="flex justify-between items-center pb-3 border-b border-slate-100">
@@ -391,47 +305,72 @@
         </div>
     </div>
 
-    <!-- 3. 扫码绑定 B 站弹窗 -->
+    <!-- 2. B 站登录弹窗 (扫码 / 手动填入 Cookie) -->
     <div id="loginModal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 flex flex-col items-center text-center">
-            <div class="w-full flex justify-between items-center mb-2">
+            <div class="w-full flex justify-between items-center mb-1">
                 <h4 class="font-bold text-slate-900 text-lg flex items-center gap-2">
                     <i class="fa-brands fa-bilibili text-bili"></i>
-                    <span>扫码绑定 B 站账号</span>
+                    <span>登录哔哩哔哩 (B站)</span>
                 </h4>
-                <button onclick="closeLoginModal()" class="text-slate-400 hover:text-slate-600 text-sm">
+                <button onclick="closeLoginModal()" class="text-slate-400 hover:text-slate-600 p-1">
                     <i class="fa-solid fa-xmark text-lg"></i>
                 </button>
             </div>
             
-            <p class="text-xs text-slate-500 mb-6">
-                使用手机 B 站 App 扫码，解锁大会员 4K/原画清晰度
+            <p class="text-xs text-slate-500 mb-3">
+                登录后可解锁 4K 超清、1080P60 帧及大会员专属画质
             </p>
 
-            <!-- 二维码展示区 -->
-            <div class="relative w-52 h-52 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center shadow-inner overflow-hidden p-2">
-                <div id="qrcodeCanvas"></div>
-                <!-- 过期遮罩 -->
-                <div id="qrcodeExpiredOverlay" class="hidden absolute inset-0 bg-white/95 flex flex-col items-center justify-center gap-2">
-                    <i class="fa-solid fa-rotate-right text-2xl text-blue-600"></i>
-                    <span class="text-xs font-semibold text-slate-700">二维码已过期</span>
-                    <button onclick="refreshLoginQRCode()" class="text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-full font-medium">点击刷新</button>
+            <!-- Tab 切换 -->
+            <div class="flex bg-slate-100 p-1 rounded-xl w-full mb-4">
+                <button id="loginTabQr" onclick="switchLoginTab('qr')" class="flex-1 py-1.5 text-xs font-semibold rounded-lg transition bg-white text-blue-600 shadow-sm">
+                    📱 扫码登录
+                </button>
+                <button id="loginTabCookie" onclick="switchLoginTab('cookie')" class="flex-1 py-1.5 text-xs font-semibold rounded-lg transition text-slate-500 hover:text-slate-800">
+                    🍪 填入 Cookie
+                </button>
+            </div>
+
+            <!-- 二维码登录视图 -->
+            <div id="loginViewQr" class="w-full flex flex-col items-center">
+                <!-- 二维码展示区 -->
+                <div class="relative w-52 h-52 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-center shadow-inner overflow-hidden p-2">
+                    <div id="qrcodeCanvas"></div>
+                    <!-- 过期遮罩 -->
+                    <div id="qrcodeExpiredOverlay" class="hidden absolute inset-0 bg-white/95 flex flex-col items-center justify-center gap-2">
+                        <i class="fa-solid fa-rotate-right text-2xl text-blue-600"></i>
+                        <span class="text-xs font-semibold text-slate-700">二维码已过期</span>
+                        <button onclick="refreshLoginQRCode()" class="text-xs text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-full font-medium">点击刷新</button>
+                    </div>
+                    <!-- 加载遮罩 -->
+                    <div id="qrcodeLoadingOverlay" class="absolute inset-0 bg-white flex flex-col items-center justify-center gap-2">
+                        <div class="w-8 h-8 border-3 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+                        <span class="text-xs text-slate-400">正在生成登录码...</span>
+                    </div>
                 </div>
-                <!-- 加载遮罩 -->
-                <div id="qrcodeLoadingOverlay" class="absolute inset-0 bg-white flex flex-col items-center justify-center gap-2">
-                    <div class="w-8 h-8 border-3 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-                    <span class="text-xs text-slate-400">正在生成登录码...</span>
+
+                <!-- 状态提示 -->
+                <div id="loginStatusBadge" class="mt-4 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
+                    <span id="loginStatusText">请使用 哔哩哔哩 手机客户端 扫一扫</span>
                 </div>
             </div>
 
-            <!-- 状态提示 -->
-            <div id="loginStatusBadge" class="mt-4 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
-                <span id="loginStatusText">请使用 哔哩哔哩 手机客户端 扫一扫</span>
+            <!-- 手动 Cookie 录入视图 -->
+            <div id="loginViewCookie" class="hidden w-full flex flex-col text-left">
+                <label class="block text-xs font-semibold text-slate-600 mb-1.5">粘贴 SESSDATA 或完整 Cookie：</label>
+                <textarea id="manualCookieInput" rows="4" placeholder="粘贴浏览器中的 SESSDATA 值或完整 Cookie 字符串 (如 SESSDATA=abc123...)" class="w-full text-xs p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 font-mono"></textarea>
+                <button onclick="submitManualCookie()" class="w-full mt-3 bg-gradient-to-r from-bili to-blue-600 hover:from-sky-500 hover:to-blue-700 text-white font-semibold text-xs py-2.5 rounded-xl shadow-md transition active:scale-98">
+                    立即验证并登录
+                </button>
+                <p class="text-[11px] text-slate-400 mt-2 leading-relaxed text-center">
+                    💡 电脑浏览器按 F12 打开控制台，在 Application -> Cookies 中复制 <code>SESSDATA</code> 粘贴即可。
+                </p>
             </div>
 
-            <p class="mt-5 text-[11px] text-slate-400 leading-relaxed">
-                🔒 凭证安全存储于当前用户的个人加密档案中，绝不下发或泄露给任何其他用户。
+            <p class="mt-4 text-[11px] text-slate-400 leading-relaxed text-center">
+                🔒 凭据仅存储于当前浏览器本地，未登录默认自动走 TV 免登录通道。
             </p>
         </div>
     </div>
@@ -533,7 +472,6 @@
     </footer>
 
     <script>
-        window.currentSystemUser = null;
         window.currentBiliUser = null;
         let selectedQualityObj = null;
         let currentVideoData = null;
@@ -641,23 +579,52 @@
             return isLocalhost() && !isMobileDevice();
         }
 
-        // 统一网络请求封装 (自动携带 Bearer Token 与 401 拦截)
+        // ==================== 客户端身份与 B 站状态管理 ====================
+
+        function getClientId() {
+            let cid = localStorage.getItem("bbdown_client_id");
+            if (!cid) {
+                cid = "c_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 9);
+                localStorage.setItem("bbdown_client_id", cid);
+            }
+            return cid;
+        }
+
+        function getBiliCookie() {
+            return localStorage.getItem("bbdown_bili_cookie") || "";
+        }
+
+        function setBiliCookie(cookie) {
+            if (cookie) {
+                localStorage.setItem("bbdown_bili_cookie", cookie);
+            } else {
+                localStorage.removeItem("bbdown_bili_cookie");
+                localStorage.removeItem("bbdown_bili_user");
+            }
+        }
+
+        function getBiliUser() {
+            try {
+                const u = localStorage.getItem("bbdown_bili_user");
+                return u ? JSON.parse(u) : null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        // 统一网络请求封装 (自动携带 X-Client-Id 与 X-Bili-Cookie，零 401 拦截)
         async function authFetch(url, options = {}) {
             options.headers = options.headers || {};
+            options.headers["X-Client-Id"] = getClientId();
+            const biliCookie = getBiliCookie();
+            if (biliCookie) {
+                options.headers["X-Bili-Cookie"] = encodeURIComponent(biliCookie);
+            }
             const token = getToken();
             if (token) {
                 options.headers["Authorization"] = `Bearer ${token}`;
             }
-            const res = await fetch(url, options);
-            if (res.status === 401) {
-                setToken("");
-                window.currentSystemUser = null;
-                window.currentBiliUser = null;
-                updateUserUI();
-                openAuthModal('login');
-                throw new Error("请先登录系统账号");
-            }
-            return res;
+            return await fetch(url, options);
         }
 
         function showToast(msg) {
@@ -678,114 +645,10 @@
             }, 2500);
         }
 
-        // ==================== 认证与用户管理 ====================
-
-        function openAuthModal(mode = 'login') {
-            document.getElementById("authModal").classList.remove("hidden");
-            switchAuthTab(mode);
-        }
-
-        function closeAuthModal() {
-            document.getElementById("authModal").classList.add("hidden");
-        }
-
-        function switchAuthTab(tab) {
-            const btnLogin = document.getElementById("authTabLogin");
-            const btnReg = document.getElementById("authTabRegister");
-            const formLogin = document.getElementById("loginForm");
-            const formReg = document.getElementById("registerForm");
-            const modalTitle = document.getElementById("authModalTitle");
-
-            if (tab === 'login') {
-                btnLogin.className = "flex-1 py-1.5 text-xs font-semibold rounded-lg transition bg-white text-blue-600 shadow-sm";
-                btnReg.className = "flex-1 py-1.5 text-xs font-semibold rounded-lg transition text-slate-500 hover:text-slate-800";
-                formLogin.classList.remove("hidden");
-                formReg.classList.add("hidden");
-                modalTitle.innerText = "登录系统账号";
-            } else {
-                btnReg.className = "flex-1 py-1.5 text-xs font-semibold rounded-lg transition bg-white text-blue-600 shadow-sm";
-                btnLogin.className = "flex-1 py-1.5 text-xs font-semibold rounded-lg transition text-slate-500 hover:text-slate-800";
-                formReg.classList.remove("hidden");
-                formLogin.classList.add("hidden");
-                modalTitle.innerText = "快速注册新用户";
-            }
-        }
-
-        async function handleLogin(e) {
-            e.preventDefault();
-            const username = document.getElementById("loginUsername").value.trim();
-            const password = document.getElementById("loginPassword").value.trim();
-            if (!username || !password) return alert("请输入用户名与密码！");
-
-            try {
-                const res = await fetch("/api/auth/login", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ username, password })
-                });
-                const data = await res.json();
-                if (data.code !== 0) throw new Error(data.message || "登录失败");
-
-                setToken(data.token);
-                closeAuthModal();
-                showToast(`🎉 欢迎回来，${data.user.username}！`);
-                await checkUserStatus();
-                refreshTasks();
-            } catch (err) {
-                alert("登录失败: " + err.message);
-            }
-        }
-
-        async function handleRegister(e) {
-            e.preventDefault();
-            const username = document.getElementById("regUsername").value.trim();
-            const password = document.getElementById("regPassword").value.trim();
-            const confirm = document.getElementById("regPasswordConfirm").value.trim();
-
-            if (!username || !password) return alert("请完整填写用户名与密码！");
-            if (password !== confirm) return alert("两次输入的密码不一致！");
-
-            try {
-                const res = await fetch("/api/auth/register", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ username, password })
-                });
-                const data = await res.json();
-                if (data.code !== 0) throw new Error(data.message || "注册失败");
-
-                setToken(data.token);
-                closeAuthModal();
-                showToast(`🎉 注册成功！已为您分配独立存储空间：${data.user.username}`);
-                await checkUserStatus();
-                refreshTasks();
-            } catch (err) {
-                alert("注册失败: " + err.message);
-            }
-        }
-
-        async function logoutSystem() {
-            if (!confirm("确定要退出当前系统账号吗？")) return;
-            try {
-                await fetch("/api/auth/logout", {
-                    method: "POST",
-                    headers: { "Authorization": `Bearer ${getToken()}` }
-                });
-            } catch (e) {}
-            setToken("");
-            window.currentSystemUser = null;
-            window.currentBiliUser = null;
-            closeUserDropdown();
-            updateUserUI();
-            renderTaskList([], []);
-            showToast("已退出系统账号");
-            openAuthModal('login');
-        }
-
         function toggleUserDropdown(event) {
             event.stopPropagation();
             const menu = document.getElementById("userDropdownMenu");
-            menu.classList.toggle("hidden");
+            if (menu) menu.classList.toggle("hidden");
         }
 
         function closeUserDropdown() {
@@ -797,89 +660,68 @@
             closeUserDropdown();
         });
 
-        // 检查当前系统与 B 站状态
-        async function checkUserStatus() {
-            try {
-                const res = await authFetch("/api/auth/me");
-                const data = await res.json();
-                if (data.is_authenticated && data.user) {
-                    window.currentSystemUser = data.user;
-                    window.currentBiliUser = data.user.bili || null;
-                    updateUserUI();
-                } else {
-                    window.currentSystemUser = null;
-                    window.currentBiliUser = null;
-                    updateUserUI();
-                }
-            } catch (e) {
-                window.currentSystemUser = null;
-                window.currentBiliUser = null;
-                updateUserUI();
-            }
-        }
+        // 更新导航栏 B 站状态展示
+        function updateBiliUI() {
+            const bili = getBiliUser();
+            const unlogged = document.getElementById("navBiliUnlogged");
+            const logged = document.getElementById("navBiliLogged");
+            const avatar = document.getElementById("navBiliAvatar");
+            const name = document.getElementById("navBiliName");
+            const vipBadge = document.getElementById("navBiliVipBadge");
+            const dropName = document.getElementById("dropdownBiliName");
+            const dropMid = document.getElementById("dropdownBiliMid");
 
-        function updateUserUI() {
-            const navAuthBtn = document.getElementById("navAuthBtn");
-            const navUserPill = document.getElementById("navUserPill");
-            const navBiliAvatar = document.getElementById("navBiliAvatar");
-            const navDefaultAvatar = document.getElementById("navDefaultAvatar");
-            const navSystemName = document.getElementById("navSystemName");
-            const navVipBadge = document.getElementById("navVipBadge");
-            const dropdownUsername = document.getElementById("dropdownUsername");
-            const dropdownSaveDir = document.getElementById("dropdownSaveDir");
-            const biliBindStatus = document.getElementById("biliBindStatus");
-            const biliLoginActionBtn = document.getElementById("biliLoginActionBtn");
-            const biliLogoutActionBtn = document.getElementById("biliLogoutActionBtn");
-            const displaySaveDir = document.getElementById("displaySaveDir");
-            const openFolderBtn = document.getElementById("openFolderBtn");
+            if (bili && bili.is_login) {
+                if (unlogged) unlogged.classList.add("hidden");
+                if (logged) logged.classList.remove("hidden");
+                if (avatar) avatar.src = bili.face || "";
+                if (name) name.innerText = bili.uname || "B站用户";
+                if (dropName) dropName.innerText = bili.uname || "B站用户";
+                if (dropMid) dropMid.innerText = bili.mid ? `UID: ${bili.mid}` : "";
 
-            const navAuthBtns = document.getElementById("navAuthBtns");
-            if (window.currentSystemUser) {
-                if (navAuthBtns) navAuthBtns.classList.add("hidden");
-                navUserPill.classList.remove("hidden");
-                navSystemName.innerText = window.currentSystemUser.username;
-                dropdownUsername.innerText = `系统账号: ${window.currentSystemUser.username}`;
-                dropdownSaveDir.innerText = "下载方式: 📥 浏览器默认下载目录";
-                dropdownSaveDir.title = "视频混流完成后自动拉起浏览器原生下载并保存至本机";
-
-                const bili = window.currentBiliUser;
-                if (bili && bili.is_login) {
-                    navBiliAvatar.src = bili.face;
-                    navBiliAvatar.classList.remove("hidden");
-                    navDefaultAvatar.classList.add("hidden");
-                    biliBindStatus.innerText = bili.uname;
-                    biliBindStatus.className = "font-bold text-blue-600 truncate max-w-[120px]";
-                    biliLoginActionBtn.classList.add("hidden");
-                    biliLogoutActionBtn.classList.remove("hidden");
-
+                if (vipBadge) {
                     if (bili.vip_label) {
-                        navVipBadge.innerText = bili.vip_label;
-                        navVipBadge.classList.remove("hidden");
+                        vipBadge.innerText = bili.vip_label;
+                        vipBadge.classList.remove("hidden");
                     } else {
-                        navVipBadge.classList.add("hidden");
+                        vipBadge.classList.add("hidden");
                     }
-                } else {
-                    navBiliAvatar.classList.add("hidden");
-                    navDefaultAvatar.classList.remove("hidden");
-                    navVipBadge.classList.add("hidden");
-                    biliBindStatus.innerText = "未绑定";
-                    biliBindStatus.className = "font-bold text-slate-400";
-                    biliLoginActionBtn.classList.remove("hidden");
-                    biliLogoutActionBtn.classList.add("hidden");
                 }
             } else {
-                if (navAuthBtns) navAuthBtns.classList.remove("hidden");
-                navUserPill.classList.add("hidden");
-                if (displaySaveDir) displaySaveDir.innerText = "未登录 (可点击右上角扫码登录)";
+                if (unlogged) unlogged.classList.remove("hidden");
+                if (logged) logged.classList.add("hidden");
             }
         }
 
-        // ==================== B 站扫码绑定 / 一键登录 ====================
+        // 异步校验 B 站登录凭据
+        async function checkBiliStatus() {
+            const cookie = getBiliCookie();
+            if (!cookie) {
+                updateBiliUI();
+                return;
+            }
+            try {
+                const res = await authFetch("/api/bili/status");
+                const data = await res.json();
+                if (data.code === 0 && data.data && data.data.is_login) {
+                    localStorage.setItem("bbdown_bili_user", JSON.stringify(data.data));
+                } else if (data.is_login) {
+                    localStorage.setItem("bbdown_bili_user", JSON.stringify(data));
+                } else {
+                    setBiliCookie("");
+                }
+            } catch (e) {
+                console.warn("检查 B 站登录凭据异常:", e);
+            }
+            updateBiliUI();
+        }
+
+        // ==================== B 站登录弹窗 (扫码 / 手动输入) ====================
 
         function openLoginModal() {
             closeUserDropdown();
             document.getElementById("loginModal").classList.remove("hidden");
-            refreshLoginQRCode();
+            switchLoginTab('qr');
         }
 
         function closeLoginModal() {
@@ -887,6 +729,30 @@
             if (qrPollTimer) {
                 clearInterval(qrPollTimer);
                 qrPollTimer = null;
+            }
+        }
+
+        function switchLoginTab(tab) {
+            const tabQr = document.getElementById("loginTabQr");
+            const tabCookie = document.getElementById("loginTabCookie");
+            const viewQr = document.getElementById("loginViewQr");
+            const viewCookie = document.getElementById("loginViewCookie");
+
+            if (tab === 'qr') {
+                tabQr.className = "flex-1 py-1.5 text-xs font-semibold rounded-lg transition bg-white text-blue-600 shadow-sm";
+                tabCookie.className = "flex-1 py-1.5 text-xs font-semibold rounded-lg transition text-slate-500 hover:text-slate-800";
+                viewQr.classList.remove("hidden");
+                viewCookie.classList.add("hidden");
+                refreshLoginQRCode();
+            } else {
+                tabCookie.className = "flex-1 py-1.5 text-xs font-semibold rounded-lg transition bg-white text-blue-600 shadow-sm";
+                tabQr.className = "flex-1 py-1.5 text-xs font-semibold rounded-lg transition text-slate-500 hover:text-slate-800";
+                viewCookie.classList.remove("hidden");
+                viewQr.classList.add("hidden");
+                if (qrPollTimer) {
+                    clearInterval(qrPollTimer);
+                    qrPollTimer = null;
+                }
             }
         }
 
@@ -937,26 +803,29 @@
                 const statusText = document.getElementById("loginStatusText");
 
                 if (data.code === 0) {
-                    if (data.token) {
-                        setToken(data.token);
-                    }
-                    if (data.system_user) {
-                        window.currentSystemUser = data.system_user;
+                    if (data.cookie) {
+                        setBiliCookie(data.cookie);
                     }
                     if (data.user) {
-                        window.currentBiliUser = data.user;
+                        localStorage.setItem("bbdown_bili_user", JSON.stringify(data.user));
+                    }
+                    if (data.token) {
+                        setToken(data.token);
                     }
                     clearInterval(qrPollTimer);
                     qrPollTimer = null;
                     statusText.innerText = `🎉 登录成功！欢迎，${(data.user && data.user.uname) || '用户'}`;
                     document.getElementById("loginStatusBadge").className = "mt-4 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 flex items-center gap-2";
-                    
-                    setTimeout(async () => {
+
+                    setTimeout(() => {
                         closeLoginModal();
-                        await checkUserStatus();
-                        refreshTasks();
-                        showToast(`🎉 欢迎，${(data.user && data.user.uname) || '用户'}！`);
-                    }, 1000);
+                        updateBiliUI();
+                        showToast(`🎉 欢迎，${(data.user && data.user.uname) || '用户'}！已解锁全部高清画质`);
+                        const currentInput = document.getElementById("urlInput").value.trim();
+                        if (currentInput) {
+                            parseVideo();
+                        }
+                    }, 800);
                 } else if (data.code === 86090) {
                     statusText.innerText = "📱 扫码成功，请在手机上确认...";
                 } else if (data.code === 86038) {
@@ -969,15 +838,49 @@
             }
         }
 
-        async function logoutBili() {
-            if (!confirm("确定要解除当前绑定的 B 站账号吗？")) return;
+        async function submitManualCookie() {
+            const raw = document.getElementById("manualCookieInput").value.trim();
+            if (!raw) return alert("请输入 Cookie 或 SESSDATA！");
+            let cookieStr = raw;
+            if (!cookieStr.includes("=") && cookieStr.length > 20) {
+                cookieStr = "SESSDATA=" + cookieStr;
+            }
             try {
-                await authFetch("/api/user/logout-bili", { method: "POST" });
-                closeUserDropdown();
-                await checkUserStatus();
-                showToast("已解绑 B 站账号");
+                const res = await authFetch("/api/bili/cookie-login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ cookie: cookieStr })
+                });
+                const data = await res.json();
+                if (data.code !== 0) throw new Error(data.message);
+                setBiliCookie(data.cookie || cookieStr);
+                if (data.user) {
+                    localStorage.setItem("bbdown_bili_user", JSON.stringify(data.user));
+                }
+                closeLoginModal();
+                updateBiliUI();
+                showToast(`🎉 欢迎，${(data.user && data.user.uname) || '用户'}！已解锁全部高清画质`);
+                const currentInput = document.getElementById("urlInput").value.trim();
+                if (currentInput) {
+                    parseVideo();
+                }
             } catch (e) {
-                alert("解绑失败: " + e.message);
+                alert("登录失败: " + e.message);
+            }
+        }
+
+        async function logoutBili() {
+            if (!confirm("确定要退出当前 B 站账号吗？")) return;
+            try {
+                await authFetch("/api/bili/logout", { method: "POST" });
+            } catch (e) {}
+            setBiliCookie("");
+            closeUserDropdown();
+            updateBiliUI();
+            showToast("已退出 B 站登录，回到 TV 免登录模式");
+            const currentInput = document.getElementById("urlInput").value.trim();
+            if (currentInput) {
+                parseVideo();
             }
         }
 
@@ -1013,7 +916,7 @@
 
         function getSettings() {
             return {
-                saveDir: (window.currentSystemUser && window.currentSystemUser.save_dir) || localStorage.getItem("bbdown_save_dir") || "",
+                saveDir: localStorage.getItem("bbdown_save_dir") || "",
                 tvMode: localStorage.getItem("bbdown_tv_mode") === "true",
                 addDfn: localStorage.getItem("bbdown_add_dfn") !== "false"
             };
@@ -1036,40 +939,10 @@
         }
 
         async function saveSettings() {
-            const newSaveDir = document.getElementById("settingSaveDir").value.trim();
-            const manualCookie = document.getElementById("settingCookie").value.trim();
-
-            if (newSaveDir && window.currentSystemUser && newSaveDir !== window.currentSystemUser.save_dir) {
-                try {
-                    const res = await authFetch("/api/user/save-dir", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ save_dir: newSaveDir })
-                    });
-                    const d = await res.json();
-                    if (d.code !== 0) throw new Error(d.message);
-                    window.currentSystemUser.save_dir = d.save_dir;
-                } catch (e) {
-                    alert("更新路径失败: " + e.message);
-                    return;
-                }
-            }
-
-            if (manualCookie) {
-                try {
-                    await authFetch("/api/user/bili-cookie", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ cookie: manualCookie })
-                    });
-                } catch (e) {}
-            }
-
             localStorage.setItem("bbdown_tv_mode", document.getElementById("settingTvMode").checked);
             localStorage.setItem("bbdown_add_dfn", document.getElementById("settingAddDfn").checked);
             toggleSettingsModal();
-            await checkUserStatus();
-            showToast("配置已保存！");
+            showToast("偏好设置已保存！");
         }
 
         function toggleSettingsModal() {
@@ -1077,8 +950,6 @@
             const modal = document.getElementById("settingsModal");
             modal.classList.toggle("hidden");
             const s = getSettings();
-            const saveDirInput = document.getElementById("settingSaveDir");
-            if (saveDirInput) saveDirInput.value = s.saveDir;
             document.getElementById("settingTvMode").checked = s.tvMode;
             document.getElementById("settingAddDfn").checked = s.addDfn;
         }
@@ -1100,12 +971,47 @@
             showToast("💡 请直接按 Ctrl + V 粘贴视频链接");
         }
 
-        function renderQualityOptions(qualities) {
+        function renderQualityOptions(qualities, isBiliLogin = false) {
             const container = document.getElementById("qualityOptions");
             if (!container) return;
             container.innerHTML = "";
 
-            const bili = window.currentBiliUser;
+            const noticeElem = document.getElementById("qualityUnlockNotice");
+            const modeBanner = document.getElementById("qualityModeBanner");
+            const bili = getBiliUser();
+
+            if (isBiliLogin && bili && bili.is_login) {
+                if (modeBanner) {
+                    modeBanner.innerHTML = `<span class="text-pink-600 font-semibold"><i class="fa-solid fa-crown mr-1"></i>已解锁全高清画质</span>`;
+                }
+                if (noticeElem) {
+                    noticeElem.className = "mb-3.5 p-2.5 rounded-xl bg-pink-50/80 border border-pink-200/70 flex items-center gap-2 text-xs text-pink-700";
+                    noticeElem.innerHTML = `
+                        <i class="fa-solid fa-crown text-pink-500 text-sm shrink-0"></i>
+                        <span>已登录 B 站账号 <strong>${escapeHtml(bili.uname)}</strong>${bili.vip_label ? `（<span class="font-semibold text-pink-600">${escapeHtml(bili.vip_label)}</span>）` : ''}，已解锁 4K 超清、1080P60 及全部高清画质！</span>
+                    `;
+                    noticeElem.classList.remove("hidden");
+                }
+            } else {
+                if (modeBanner) {
+                    modeBanner.innerHTML = `<span class="text-blue-600 font-medium"><i class="fa-solid fa-tv mr-1"></i>TV 免登录模式 (最高 1080P)</span>`;
+                }
+                if (noticeElem) {
+                    noticeElem.className = "mb-3.5 p-2.5 rounded-xl bg-gradient-to-r from-blue-50/90 via-indigo-50/80 to-purple-50/80 border border-blue-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-700";
+                    noticeElem.innerHTML = `
+                        <div class="flex items-center gap-1.5">
+                            <span class="px-1.5 py-0.5 rounded bg-blue-600 text-white font-bold text-[10px] shrink-0">TV 免登录</span>
+                            <span>当前仅显示免登录可下载画质（最高 1080P 高清）。</span>
+                        </div>
+                        <button type="button" onclick="openLoginModal()" class="self-start sm:self-auto text-blue-600 hover:text-blue-800 font-semibold underline flex items-center gap-1 shrink-0">
+                            <i class="fa-solid fa-crown text-amber-500"></i>
+                            <span>扫码登录解锁 4K / 原画</span>
+                        </button>
+                    `;
+                    noticeElem.classList.remove("hidden");
+                }
+            }
+
             const isVip = Boolean(bili && (bili.vip_type > 0 || bili.vip_label === "大会员"));
             let defaultIdx = -1;
             if (isVip) {
@@ -1138,7 +1044,7 @@
 
                 btn.innerHTML = `
                     <div class="flex items-center justify-between w-full gap-1 mb-1">
-                        <span class="font-bold text-xs truncate">${q.desc}</span>
+                        <span class="font-bold text-xs truncate">${escapeHtml(q.desc)}</span>
                         ${badgeHtml}
                     </div>
                     <div class="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono">
@@ -1161,13 +1067,8 @@
             selectedQualityObj = qualities[defaultIdx] || qualities[0];
         }
 
-        // 解析视频
+        // 解析视频 (免系统登录，直接基于浏览器 B 站状态)
         async function parseVideo() {
-            if (!window.currentSystemUser) {
-                openAuthModal('login');
-                return;
-            }
-
             const rawUrl = document.getElementById("urlInput").value.trim();
             if (!rawUrl) return alert("请输入视频链接！");
 
@@ -1197,7 +1098,7 @@
                 document.getElementById("videoCover").src = `/api/image-proxy?url=${encodeURIComponent(v.pic)}`;
 
                 if (v.qualities && v.qualities.length > 0) {
-                    renderQualityOptions(v.qualities);
+                    renderQualityOptions(v.qualities, v.is_bili_login);
                 }
 
                 resetDownloadBtn();
@@ -1238,10 +1139,6 @@
         }
 
         async function submitDownloadTask(forceRedownload = false) {
-            if (!window.currentSystemUser) {
-                openAuthModal('login');
-                return;
-            }
             if (!currentVideoData || !selectedQualityObj) return alert("请先解析视频！");
             const s = getSettings();
             const q = selectedQualityObj;
@@ -1352,7 +1249,6 @@
         }
 
         async function refreshTasks() {
-            if (!window.currentSystemUser) return;
             try {
                 const res = await authFetch("/api/tasks");
                 if (!res.ok) return;
@@ -1515,12 +1411,10 @@
 
         // ==================== 初始化 ====================
         (async function init() {
-            updateUserUI();
-            await checkUserStatus();
-            if (window.currentSystemUser) {
-                refreshTasks();
-            }
+            updateBiliUI();
+            refreshTasks();
             taskPollIntervalTimer = setInterval(refreshTasks, 3000);
+            await checkBiliStatus();
         })();
     </script>
 </body>

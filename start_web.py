@@ -64,6 +64,38 @@ def clear_cookie_files():
         except Exception:
             pass
 
+def extract_client_id_from_request(headers, query_params=None):
+    cid = headers.get("X-Client-Id", "").strip()
+    if cid:
+        return cid
+    if query_params and "client_id" in query_params:
+        tokens = query_params["client_id"]
+        if tokens and tokens[0].strip():
+            return tokens[0].strip()
+    cookie_header = headers.get("Cookie", "")
+    if cookie_header:
+        for part in cookie_header.split(";"):
+            part = part.strip()
+            if part.startswith("bilidown_client_id="):
+                return part.split("=", 1)[1].strip()
+    return ""
+
+def extract_bili_cookie_from_request(headers, query_params=None):
+    bili_c = headers.get("X-Bili-Cookie", "").strip()
+    if bili_c:
+        return urllib.parse.unquote(bili_c)
+    if query_params and "bili_cookie" in query_params:
+        tokens = query_params["bili_cookie"]
+        if tokens and tokens[0].strip():
+            return urllib.parse.unquote(tokens[0].strip())
+    cookie_header = headers.get("Cookie", "")
+    if cookie_header:
+        for part in cookie_header.split(";"):
+            part = part.strip()
+            if part.startswith("bbdown_bili_cookie="):
+                return urllib.parse.unquote(part.split("=", 1)[1].strip())
+    return ""
+
 def extract_token_from_request(headers, query_params=None):
     # 1. Authorization: Bearer <token>
     auth_header = headers.get("Authorization", "")
@@ -133,13 +165,14 @@ QUALITY_CONFIG = {
     16:  {"dfn_tag": "360P 流畅", "dfn_priority": "360P 流畅", "fallback_kbps": 130},
 }
 
-def fetch_qualities(bvid, cid, duration, cookie=""):
+def fetch_qualities(bvid, cid, duration, cookie="", is_bili_login=False):
     try:
         play_url = f"https://api.bilibili.com/x/player/playurl?bvid={bvid}&cid={cid}&qn=127&fnval=4048&fourk=1"
         headers = {
             "User-Agent": DEFAULT_UA,
             "Referer": "https://www.bilibili.com"
         }
+        # 如果未登录 B 站，使用基础无凭据或基础 Cookie 请求免登录支持的流
         if cookie:
             headers["Cookie"] = cookie
         req = urllib.request.Request(play_url, headers=headers)
@@ -208,17 +241,26 @@ def fetch_qualities(bvid, cid, duration, cookie=""):
             "size": f"{audio_mb} MB" if audio_mb else "高音质",
             "is_audio": True
         })
+
+        # 用户核心要求: "没登录默认走tv，并且仅显示没登录可下载的画质，登陆了就可以下载高清"
+        if not is_bili_login:
+            qualities = [q for q in qualities if q["qn"] <= 80 or q.get("is_audio")]
+
         return qualities
     except Exception as e:
         print(f"[!] 获取画质列表失败: {e}", flush=True)
-        return [
+        fallback = [
             {"qn": 120, "desc": "4K / 1080P 原画", "dfn": "4K 超清, 4K 超高清, 1080P 高码率, 1080P 高清", "dfn_tag": "原画", "badge": "", "badge_type": "free", "size": "自动", "is_audio": False},
+            {"qn": 80, "desc": "1080P 高清", "dfn": "1080P 高清", "dfn_tag": "1080P 高清", "badge": "", "badge_type": "free", "size": "约 50 MB", "is_audio": False},
             {"qn": 64, "desc": "720P 准高清", "dfn": "720P 高清, 720P 准高清", "dfn_tag": "720P 高清", "badge": "", "badge_type": "free", "size": "约 30 MB", "is_audio": False},
             {"qn": 32, "desc": "480P 标清", "dfn": "480P 清晰, 480P 标清", "dfn_tag": "480P 清晰", "badge": "", "badge_type": "free", "size": "约 18 MB", "is_audio": False},
             {"qn": 0, "desc": "仅下载音频 (M4A)", "dfn": "", "dfn_tag": "仅音频", "badge": "纯音频", "badge_type": "audio", "size": "约 8 MB", "is_audio": True}
         ]
+        if not is_bili_login:
+            fallback = [q for q in fallback if q["qn"] <= 80 or q.get("is_audio")]
+        return fallback
 
-def parse_bili_url(raw_url, cookie=None):
+def parse_bili_url(raw_url, cookie="", is_bili_login=False):
     final_url = raw_url
     if raw_url.startswith("http://") or raw_url.startswith("https://"):
         try:
@@ -239,11 +281,10 @@ def parse_bili_url(raw_url, cookie=None):
         raise ValueError("未识别到有效的 BV 号或 AV 号")
 
     api_url = f"https://api.bilibili.com/x/web-interface/view?{param}"
-    if cookie is None:
-        cookie = get_saved_cookie()
+    base_cookie = cookie or get_saved_cookie()
     headers = {"User-Agent": DEFAULT_UA}
-    if cookie:
-        headers["Cookie"] = cookie
+    if base_cookie:
+        headers["Cookie"] = base_cookie
 
     api_req = urllib.request.Request(api_url, headers=headers)
     with urllib.request.urlopen(api_req, timeout=6) as resp:
@@ -253,7 +294,7 @@ def parse_bili_url(raw_url, cookie=None):
         v = data["data"]
         cid = v.get("cid") or (v.get("pages") and v["pages"][0].get("cid")) or 0
         duration = v.get("duration", 0)
-        qualities = fetch_qualities(v["bvid"], cid, duration, cookie)
+        qualities = fetch_qualities(v["bvid"], cid, duration, cookie=cookie, is_bili_login=is_bili_login)
         return {
             "title": v["title"],
             "pic": v["pic"].replace("http://", "https://"),
@@ -262,7 +303,8 @@ def parse_bili_url(raw_url, cookie=None):
             "cid": cid,
             "duration": duration,
             "owner": v["owner"]["name"],
-            "qualities": qualities
+            "qualities": qualities,
+            "is_bili_login": is_bili_login
         }
 
 def get_user_info(cookie_str=None):
@@ -431,9 +473,20 @@ class WebUIHandler(SimpleHTTPRequestHandler):
 
     def get_current_user(self, query=None):
         token = extract_token_from_request(self.headers, query)
-        if not token:
-            return None
-        return db.get_user_by_token(token)
+        if token:
+            user = db.get_user_by_token(token)
+            if user:
+                return user
+
+        client_id = extract_client_id_from_request(self.headers, query)
+        if not client_id and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
+            return db.get_user_by_username("admin")
+
+        if not client_id:
+            client_id = f"ip_{self.client_address[0]}"
+
+        user, _ = db.get_or_create_client_user(client_id, DEFAULT_DOWNLOAD_DIR)
+        return user
 
     def send_file_range(self, file_path, is_stream=False):
         """
@@ -613,19 +666,19 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             is_stream = (path == "/api/file/stream")
             return self.send_file_range(file_path, is_stream=is_stream)
 
-        # 3. 视频解析接口 (自动使用当前登录用户的 B 站 Cookie 获取专属画质)
+        # 3. 视频解析接口 (自动识别 B 站登录态：未登录默认走 TV，仅显示免费画质；登录后解锁全高清)
         if path == "/api/parse":
             url = query.get("url", [""])[0].strip()
             if not url:
                 return self.send_json(400, {"code": -1, "message": "缺少 url 参数"})
             user = self.get_current_user(query)
-            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
-                user = db.get_user_by_username("admin")
-            cookie = user.get("bili_cookie", "") if user else ""
+            cookie = extract_bili_cookie_from_request(self.headers, query) or (user.get("bili_cookie", "") if user else "")
             if not cookie and user and user.get("username") == "admin":
                 cookie = get_saved_cookie()
+
+            is_bili_login = bool(cookie and "SESSDATA=" in cookie)
             try:
-                info = parse_bili_url(url, cookie=cookie)
+                info = parse_bili_url(url, cookie=cookie, is_bili_login=is_bili_login)
                 return self.send_json(200, {"code": 0, "data": info})
             except Exception as e:
                 return self.send_json(500, {"code": -1, "message": str(e)})
@@ -633,8 +686,6 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         # 4. 系统信息接口
         if path == "/api/info":
             user = self.get_current_user(query)
-            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
-                user = db.get_user_by_username("admin")
             user_dir = get_user_work_dir(user) if user else DEFAULT_DOWNLOAD_DIR
             return self.send_json(200, {
                 "default_download_dir": user_dir,
@@ -652,7 +703,7 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json(500, {"code": -1, "message": f"生成二维码失败: {e}"})
 
-        # 6. 轮询二维码扫码状态 (自动绑定至当前系统用户，或通过 B 站扫码直接自动登录/创建用户)
+        # 6. 轮询二维码扫码状态 (稳定提取所有关键 Cookie 凭据)
         if path == "/api/login/poll":
             qrcode_key = query.get("key", [""])[0].strip()
             if not qrcode_key:
@@ -671,34 +722,31 @@ class WebUIHandler(SimpleHTTPRequestHandler):
 
                 # code 0 表示扫码并确认登录成功
                 if poll_code == 0:
-                    cookies = [f"{c.name}={c.value}" for c in cj]
-                    cookie_str = "; ".join(cookies)
+                    cookie_map = {}
+                    for c in cj:
+                        cookie_map[c.name] = c.value
+                    if poll_data.get("url") and "?" in poll_data["url"]:
+                        qs = poll_data["url"].split("?", 1)[1]
+                        for item in qs.split("&"):
+                            if "=" in item:
+                                k, v = item.split("=", 1)
+                                cookie_map[k] = v
 
-                    if "SESSDATA=" not in cookie_str and poll_data.get("url"):
-                        u = poll_data["url"]
-                        if "?" in u:
-                            qs = u.split("?", 1)[1]
-                            cookie_str = qs.replace("&", "; ")
+                    important_keys = ["SESSDATA", "bili_jct", "DedeUserID", "DedeUserID__ckMd5", "sid", "buvid3", "b_nut"]
+                    cookie_parts = [f"{k}={cookie_map[k]}" for k in important_keys if k in cookie_map]
+                    if not cookie_parts:
+                        cookie_parts = [f"{k}={v}" for k, v in cookie_map.items()]
+                    cookie_str = "; ".join(cookie_parts)
 
                     user_info = get_user_info(cookie_str)
-                    token = ""
                     user = self.get_current_user(query)
 
                     if user:
-                        # 当前已有登录用户，直接绑定 B 站 Cookie
                         db.update_user_cookie(user["id"], cookie_str)
-                        token = extract_token_from_request(self.headers, query)
-                        if not token:
-                            token = db.create_session(user["id"])
-                    else:
-                        # 当前未登录任何系统用户！通过 B 站扫码自动登录/注册独立账号
-                        user, err = db.login_or_create_user_by_bili(cookie_str, user_info, DEFAULT_DOWNLOAD_DIR)
-                        if user:
-                            token = db.create_session(user["id"])
+                        if user.get("username") == "admin":
+                            save_cookie_to_files(cookie_str)
 
-                    if not user or user.get("username") == "admin":
-                        save_cookie_to_files(cookie_str)
-
+                    token = db.create_session(user["id"]) if user else ""
                     cookie_header = {"Set-Cookie": f"bilidown_session={token}; Path=/; Max-Age=2592000; SameSite=Lax"} if token else None
 
                     return self.send_json(200, {
@@ -724,23 +772,18 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                 return self.send_json(500, {"code": -1, "message": f"轮询状态失败: {e}"})
 
         # 7. 获取当前用户 B 站登录态
-        if path == "/api/user/status":
+        if path == "/api/user/status" or path == "/api/bili/status":
             user = self.get_current_user(query)
-            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
-                user = db.get_user_by_username("admin")
-            if not user:
-                return self.send_json(200, {"is_login": False, "system_user": None})
-
-            cookie = user.get("bili_cookie", "")
-            if not cookie and user.get("username") == "admin":
+            cookie = extract_bili_cookie_from_request(self.headers, query) or (user.get("bili_cookie", "") if user else "")
+            if not cookie and user and user.get("username") == "admin":
                 cookie = get_saved_cookie()
-            info = get_user_info(cookie)
+            info = get_user_info(cookie) if cookie else {"is_login": False}
             info["cookie"] = cookie
             info["system_user"] = {
                 "id": user["id"],
                 "username": user["username"],
                 "save_dir": get_user_work_dir(user)
-            }
+            } if user else None
             return self.send_json(200, info)
 
         # 8. 打开本地保存目录 (仅限服务器本机环境)
@@ -761,10 +804,9 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         # 9. 任务列表接口 (完全按用户隔离，跨重启持久化，支持移动端直链)
         if path == "/api/tasks":
             user = self.get_current_user(query)
-            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
-                user = db.get_user_by_username("admin")
             if not user:
-                return self.send_json(401, {"code": 401, "message": "请先登录系统账号"})
+                client_id = extract_client_id_from_request(self.headers, query)
+                user, _ = db.get_or_create_client_user(client_id, DEFAULT_DOWNLOAD_DIR)
 
             user_work_dir = get_user_work_dir(user)
             user_db_tasks = db.get_user_tasks(user["id"])
@@ -985,13 +1027,34 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {"code": 0, "message": "已退出登录"}, extra_headers=cookie_header)
 
         # 4. 解绑/退出 B 站账号
-        if path in ("/api/user/logout", "/api/user/logout-bili"):
+        if path in ("/api/bili/logout", "/api/user/logout-bili", "/api/user/logout"):
             user = self.get_current_user()
             if user:
                 db.update_user_cookie(user["id"], "")
                 if user.get("username") == "admin":
                     clear_cookie_files()
             return self.send_json(200, {"code": 0, "message": "已解除 B 站账号绑定"})
+
+        # 4.5 手动输入 B 站 Cookie 登录
+        if path == "/api/bili/cookie-login":
+            user = self.get_current_user()
+            content_len = int(self.headers.get("Content-Length", 0))
+            post_body = self.rfile.read(content_len)
+            try:
+                req = json.loads(post_body.decode("utf-8"))
+                cookie_str = req.get("cookie", "").strip()
+                if not cookie_str:
+                    return self.send_json(400, {"code": -1, "message": "Cookie 不能为空"})
+                info = get_user_info(cookie_str)
+                if not info.get("is_login"):
+                    return self.send_json(400, {"code": -1, "message": "验证失败：该 Cookie 无效或已过期，请确保包含有效 SESSDATA"})
+                if user:
+                    db.update_user_cookie(user["id"], cookie_str)
+                    if user.get("username") == "admin":
+                        save_cookie_to_files(cookie_str)
+                return self.send_json(200, {"code": 0, "message": "登录成功", "cookie": cookie_str, "user": info})
+            except Exception as e:
+                return self.send_json(500, {"code": -1, "message": str(e)})
 
         # 5. 更新保存目录
         if path == "/api/user/save-dir":
@@ -1033,13 +1096,12 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json(500, {"code": -1, "message": str(e)})
 
-        # 7. 添加下载任务 (自动隔离保存目录与 B 站 Cookie)
+        # 7. 添加下载任务 (自动隔离保存目录与 B 站 Cookie，未登录默认走 TV API)
         if path == "/api/task/add":
             user = self.get_current_user()
-            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
-                user = db.get_user_by_username("admin")
             if not user:
-                return self.send_json(401, {"code": 401, "message": "请先登录系统账号"})
+                client_id = extract_client_id_from_request(self.headers)
+                user, _ = db.get_or_create_client_user(client_id, DEFAULT_DOWNLOAD_DIR)
 
             content_len = int(self.headers.get("Content-Length", 0))
             post_body = self.rfile.read(content_len)
@@ -1100,12 +1162,17 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                 }
                 task_id = db.add_user_task(user["id"], task_meta)
 
-                # Cookie 优先级：请求显式传入 > 当前系统用户的专属 B 站 Cookie > 全局备用 Cookie
-                cookie_to_use = req_data.get("Cookie") or user.get("bili_cookie") or (get_saved_cookie() if user.get("username") == "admin" else "")
+                # Cookie 优先级：请求显式传入 > 请求头携带的 B站 Cookie > 当前客户端绑定的 B 站 Cookie
+                cookie_to_use = req_data.get("Cookie") or extract_bili_cookie_from_request(self.headers) or user.get("bili_cookie")
+                if not cookie_to_use and user and user.get("username") == "admin":
+                    cookie_to_use = get_saved_cookie()
+
+                # 用户核心需求: "没登录默认走tv，并且仅显示没登录可下载的画质，登陆了就可以下载高清"
+                use_tv_api = True if not cookie_to_use else req_data.get("UseTvApi", False)
 
                 bbdown_payload = {
                     "Url": req_data.get("Url"),
-                    "UseTvApi": req_data.get("UseTvApi", False),
+                    "UseTvApi": use_tv_api,
                     "UserAgent": DEFAULT_UA,
                     "DfnPriority": req_data.get("DfnPriority"),
                     "AudioOnly": req_data.get("AudioOnly", False),

@@ -152,6 +152,34 @@ def get_user_by_username(username):
     conn.close()
     return dict(row) if row else None
 
+def get_or_create_client_user(client_id, default_download_dir):
+    if not client_id:
+        client_id = "guest"
+    safe_name = "c_" + re.sub(r'[^a-zA-Z0-9_]', '_', client_id)[:24]
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        c.execute("SELECT id, username, bili_cookie, custom_save_dir, created_at FROM users WHERE username = ?", (safe_name,))
+        row = c.fetchone()
+        if row:
+            return dict(row), None
+        else:
+            salt = secrets.token_hex(16)
+            pwd_hash = hash_password(secrets.token_hex(16), salt)
+            user_dir = os.path.join(default_download_dir, "clients", safe_name)
+            os.makedirs(user_dir, exist_ok=True)
+            c.execute("""
+            INSERT INTO users (username, password_hash, salt, bili_cookie, custom_save_dir, created_at)
+            VALUES (?, ?, ?, '', ?, ?)
+            """, (safe_name, pwd_hash, salt, user_dir, time.time()))
+            user_id = c.lastrowid
+            conn.commit()
+            return get_user_by_id(user_id), None
+    except Exception as e:
+        return None, str(e)
+    finally:
+        conn.close()
+
 def login_or_create_user_by_bili(cookie_str, user_info, default_download_dir):
     uname = (user_info.get("uname") or "").strip()
     mid = str(user_info.get("mid") or "")
