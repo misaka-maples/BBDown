@@ -17,9 +17,15 @@ import json
 import re
 import http.cookiejar
 import mimetypes
+import threading
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 
 import db
+
+# 全局活跃任务映射：用于严格按发起客户端/用户隔离正在下载的任务队列，彻底防止跨设备混淆
+# key: aid (str), value: { "user_id": int, "task_id": int, "dfn_tag": str, "quality_label": str, "work_dir": str, "start_time": float }
+ACTIVE_RUNNING_TASKS = {}
+ACTIVE_TASKS_LOCK = threading.Lock()
 
 SERVER_PORT = 58682
 WEB_PORT = 58683
@@ -479,9 +485,6 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                 return user
 
         client_id = extract_client_id_from_request(self.headers, query)
-        if not client_id and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
-            return db.get_user_by_username("admin")
-
         if not client_id:
             client_id = f"ip_{self.client_address[0]}"
 
@@ -616,14 +619,10 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         # 1. 认证状态检查接口
         if path == "/api/auth/me":
             user = self.get_current_user(query)
-            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
-                user = db.get_user_by_username("admin")
             if not user:
                 return self.send_json(200, {"code": 0, "is_authenticated": False, "user": None})
-            bili_cookie = user.get("bili_cookie", "")
-            if not bili_cookie and user.get("username") == "admin":
-                bili_cookie = get_saved_cookie()
-            bili_status = get_user_info(bili_cookie)
+            bili_cookie = extract_bili_cookie_from_request(self.headers, query) or user.get("bili_cookie", "")
+            bili_status = get_user_info(bili_cookie) if bili_cookie else {"is_login": False}
             work_dir = get_user_work_dir(user)
             return self.send_json(200, {
                 "code": 0,
@@ -640,8 +639,6 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         # 2. 手机端与远程浏览器文件直接下载 & 在线流式播放
         if path in ("/api/file/download", "/api/file/stream"):
             user = self.get_current_user(query)
-            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
-                user = db.get_user_by_username("admin")
             if not user:
                 return self.send_json(401, {"code": 401, "message": "未登录或登录已过期，请先登录系统"})
 
@@ -673,8 +670,6 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                 return self.send_json(400, {"code": -1, "message": "缺少 url 参数"})
             user = self.get_current_user(query)
             cookie = extract_bili_cookie_from_request(self.headers, query) or (user.get("bili_cookie", "") if user else "")
-            if not cookie and user and user.get("username") == "admin":
-                cookie = get_saved_cookie()
 
             is_bili_login = bool(cookie and "SESSDATA=" in cookie)
             try:
@@ -775,8 +770,6 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         if path == "/api/user/status" or path == "/api/bili/status":
             user = self.get_current_user(query)
             cookie = extract_bili_cookie_from_request(self.headers, query) or (user.get("bili_cookie", "") if user else "")
-            if not cookie and user and user.get("username") == "admin":
-                cookie = get_saved_cookie()
             info = get_user_info(cookie) if cookie else {"is_login": False}
             info["cookie"] = cookie
             info["system_user"] = {
@@ -822,36 +815,40 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                 except:
                     pass
 
-            # 筛选属于该用户的正在下载任务
+            # 筛选属于该用户的正在下载任务 (严格通过发起用户与任务映射隔离)
             user_running = []
             bb_running = bbdown_tasks.get("Running", [])
-            for r in bb_running:
-                r_url = r.get("Url") or ""
-                r_aid = str(r.get("Aid") or "")
-                r_title = r.get("Title") or ""
+            bb_finished = bbdown_tasks.get("Finished", [])
 
-                matching_meta = None
-                for mt in user_db_tasks:
-                    if (r_aid and mt["aid"] == r_aid) or (r_url and mt["url"] == r_url) or (r_title and mt["title"] == r_title):
-                        matching_meta = mt
-                        break
-                if matching_meta:
-                    r_copy = dict(r)
-                    r_copy["QualityLabel"] = matching_meta["quality_label"]
-                    r_copy["DfnTag"] = matching_meta["dfn_tag"]
-                    user_running.append(r_copy)
+            with ACTIVE_TASKS_LOCK:
+                # 自动清理已进入 Finished 状态的活跃映射
+                for f in bb_finished:
+                    f_aid = str(f.get("Aid") or "")
+                    if f_aid in ACTIVE_RUNNING_TASKS:
+                        del ACTIVE_RUNNING_TASKS[f_aid]
+
+                for r in bb_running:
+                    r_aid = str(r.get("Aid") or "")
+                    active_info = ACTIVE_RUNNING_TASKS.get(r_aid)
+                    # 严格隔离：只有当该运行中任务由当前用户发起时，才归入该用户的运行列表
+                    if active_info and active_info["user_id"] == user["id"]:
+                        r_copy = dict(r)
+                        r_copy["QualityLabel"] = active_info["quality_label"]
+                        r_copy["DfnTag"] = active_info["dfn_tag"]
+                        r_copy["TaskId"] = active_info["task_id"]
+                        user_running.append(r_copy)
 
             # 筛选已完成任务并精准关联磁盘文件
             user_finished = []
             bb_finished_map = {}
-            for f in bbdown_tasks.get("Finished", []):
+            for f in bb_finished:
                 f_aid = str(f.get("Aid") or "")
                 if f_aid:
                     bb_finished_map[f_aid] = f
 
             for mt in reversed(user_db_tasks):
-                # 如果该任务当前正在运行队列中，则不重复出现在已完成列表中
-                if any((r.get("Aid") and str(r["Aid"]) == mt["aid"]) or (r.get("Url") == mt["url"]) for r in user_running):
+                # 如果该任务当前正在当前用户的运行队列中，则不重复出现在已完成列表中
+                if any((r.get("TaskId") and r["TaskId"] == mt["id"]) or (r.get("Aid") and str(r["Aid"]) == mt["aid"]) for r in user_running):
                     continue
 
                 work_dir = mt.get("work_dir") or user_work_dir
@@ -906,8 +903,6 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         # 10. 检查保存目录中是否已存在同名/同画质文件 (支持返回直链即时拉起下载)
         if path == "/api/check-file":
             user = self.get_current_user(query)
-            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
-                user = db.get_user_by_username("admin")
             title = query.get("title", [""])[0].strip()
             dfn_tag = query.get("dfnTag", [""])[0].strip()
             expected_ext = query.get("expectedExt", [".mp4"])[0].strip()
@@ -1162,10 +1157,19 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                 }
                 task_id = db.add_user_task(user["id"], task_meta)
 
+                if aid:
+                    with ACTIVE_TASKS_LOCK:
+                        ACTIVE_RUNNING_TASKS[str(aid)] = {
+                            "user_id": user["id"],
+                            "task_id": task_id,
+                            "dfn_tag": dfn_tag,
+                            "quality_label": req_data.get("QualityLabel") or dfn_tag,
+                            "work_dir": work_dir,
+                            "start_time": time.time()
+                        }
+
                 # Cookie 优先级：请求显式传入 > 请求头携带的 B站 Cookie > 当前客户端绑定的 B 站 Cookie
                 cookie_to_use = req_data.get("Cookie") or extract_bili_cookie_from_request(self.headers) or user.get("bili_cookie")
-                if not cookie_to_use and user and user.get("username") == "admin":
-                    cookie_to_use = get_saved_cookie()
 
                 # 用户核心需求: "没登录默认走tv，并且仅显示没登录可下载的画质，登陆了就可以下载高清"
                 use_tv_api = True if not cookie_to_use else req_data.get("UseTvApi", False)

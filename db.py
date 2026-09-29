@@ -288,12 +288,12 @@ def add_user_task(user_id, meta):
         str(meta.get("aid", "")),
         meta.get("url", ""),
         meta.get("title", ""),
-        meta.get("qualityLabel", ""),
-        meta.get("dfnTag", ""),
-        meta.get("workDir", ""),
-        meta.get("expectedExt", ".mp4"),
-        meta.get("filePattern", ""),
-        meta.get("addTime", time.time())
+        meta.get("quality_label", meta.get("qualityLabel", "")),
+        meta.get("dfn_tag", meta.get("dfnTag", "")),
+        meta.get("work_dir", meta.get("workDir", "")),
+        meta.get("expected_ext", meta.get("expectedExt", ".mp4")),
+        meta.get("file_pattern", meta.get("filePattern", "")),
+        meta.get("add_time", meta.get("addTime", time.time()))
     ))
     task_id = c.lastrowid
     conn.commit()
