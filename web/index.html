@@ -186,46 +186,28 @@
 
         <!-- 快捷选项提示 -->
         <div class="flex flex-wrap items-center justify-center gap-3 sm:gap-4 mt-3 text-[11px] sm:text-xs text-slate-500">
-            <span class="flex items-center gap-1"><i class="fa-solid fa-user-shield text-indigo-500"></i> 多账号独立隔离</span>
-            <span class="flex items-center gap-1"><i class="fa-solid fa-mobile-screen text-emerald-500"></i> 手机端直接存盘</span>
+            <span class="flex items-center gap-1"><i class="fa-solid fa-download text-blue-600"></i> 默认拉起浏览器下载</span>
+            <span class="flex items-center gap-1"><i class="fa-solid fa-folder-arrow-down text-emerald-500"></i> 默认存入本机下载夹</span>
+            <span class="flex items-center gap-1"><i class="fa-solid fa-mobile-screen text-indigo-500"></i> 手机/电脑通用</span>
             <span class="flex items-center gap-1"><i class="fa-solid fa-crown text-pink-500"></i> 大会员 4K/原画</span>
         </div>
 
-        <!-- 个人独立保存路径指示栏 (PC本地环境) -->
-        <div id="storageBannerDesktop" class="mt-4 hidden flex-col sm:flex-row sm:items-center justify-between gap-2 w-full px-4 py-2.5 bg-blue-50/80 border border-blue-100 rounded-xl text-xs text-slate-600">
-            <span class="flex items-center gap-1.5 font-medium truncate">
-                <i class="fa-regular fa-folder-open text-blue-600 text-sm"></i>
-                <span class="shrink-0">当前个人下载路径：</span>
-                <span id="displaySaveDir" class="font-mono text-blue-700 bg-white px-2 py-0.5 rounded border border-blue-200 truncate">未登录</span>
-            </span>
-            <div class="flex items-center gap-2 self-end sm:self-center shrink-0">
-                <button id="openFolderBtn" onclick="openDownloadFolder()" class="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 transition whitespace-nowrap">
-                    <i class="fa-regular fa-folder-open"></i>
-                    <span>打开主机目录</span>
-                </button>
-                <button onclick="toggleSettingsModal()" class="text-slate-500 hover:text-slate-700 font-medium flex items-center gap-1 transition whitespace-nowrap ml-2">
-                    <i class="fa-solid fa-gear"></i>
-                    <span>偏好设置</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- 手机端 & 远程设备直存提示栏 (消除混淆的服务器路径，指引用户直接存入手机相册/文件) -->
-        <div id="storageBannerMobile" class="mt-4 hidden flex-col sm:flex-row sm:items-center justify-between gap-2 w-full px-4 py-2.5 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200/80 rounded-xl text-xs text-emerald-800 shadow-sm">
+        <!-- 浏览器原生下载模式指示栏 -->
+        <div class="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 w-full px-4 py-2.5 bg-gradient-to-r from-blue-50/90 via-indigo-50/60 to-emerald-50/80 border border-blue-100 rounded-2xl text-xs text-slate-700 shadow-sm">
             <div class="flex items-center gap-2.5">
-                <div class="w-7 h-7 rounded-lg bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-sm shadow-emerald-500/30">
-                    <i class="fa-solid fa-mobile-screen text-xs"></i>
+                <div class="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-blue-500/30">
+                    <i class="fa-solid fa-download text-xs"></i>
                 </div>
                 <div class="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2">
-                    <span class="font-bold text-emerald-900">📱 手机直存模式</span>
-                    <span class="text-emerald-700 text-[11px] sm:text-xs">
-                        视频解析下载完成后，点击任务列表的 <span class="bg-emerald-600 text-white px-1.5 py-0.5 rounded font-semibold text-[10px] sm:text-[11px]"><i class="fa-solid fa-download"></i> 存至手机</span> 即可直接保存到本地相册或文件
+                    <span class="font-bold text-slate-800">📥 浏览器直下模式</span>
+                    <span class="text-slate-500 text-[11px] sm:text-xs">
+                        解析选好画质后，云端混流完成将<strong>自动拉起浏览器下载</strong>，直接保存至手机相册/文件或电脑<strong>浏览器默认下载目录</strong>，无需指定服务端路径。
                     </span>
                 </div>
             </div>
             <div class="flex items-center gap-2 self-end sm:self-center shrink-0">
-                <button onclick="toggleSettingsModal()" class="text-emerald-700 hover:text-emerald-900 font-medium flex items-center gap-1 transition whitespace-nowrap">
-                    <i class="fa-solid fa-sliders"></i>
+                <button onclick="toggleSettingsModal()" class="text-slate-500 hover:text-blue-600 font-medium flex items-center gap-1 transition whitespace-nowrap ml-2">
+                    <i class="fa-solid fa-gear"></i>
                     <span>偏好设置</span>
                 </button>
             </div>
@@ -265,10 +247,20 @@
                         <!-- 动态生成 -->
                     </div>
 
-                    <button onclick="submitDownloadTask()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-blue-500/20 transition flex items-center justify-center gap-2 active:scale-98">
-                        <i class="fa-solid fa-cloud-arrow-down"></i>
-                        <span>开始高速下载并混流</span>
+                    <button id="startDownloadBtn" onclick="submitDownloadTask()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-blue-500/20 transition flex items-center justify-center gap-2 active:scale-98">
+                        <i id="startDownloadIcon" class="fa-solid fa-download"></i>
+                        <span id="startDownloadText">拉起浏览器下载</span>
                     </button>
+                    
+                    <div class="flex items-center justify-between mt-2 text-[11px] text-slate-400">
+                        <span id="downloadStatusNotice" class="flex items-center gap-1">
+                            <i class="fa-solid fa-circle-check text-emerald-500"></i>
+                            <span>云端混流完成后将自动拉起浏览器保存到本地</span>
+                        </span>
+                        <button id="forceRedownloadBtn" onclick="submitDownloadTask(true)" class="hidden text-slate-400 hover:text-rose-500 underline ml-2">
+                            强制重新从 B 站重新抓取
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -454,10 +446,15 @@
                 </button>
             </div>
             <div class="space-y-4 mt-4">
-                <div>
-                    <label id="settingSaveDirLabel" class="text-xs font-semibold text-slate-600 mb-1 block">个人专属保存路径</label>
-                    <input id="settingSaveDir" type="text" placeholder="未登录" class="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500 font-mono">
-                    <span id="settingSaveDirHint" class="text-[11px] text-slate-400 mt-1 block">普通用户仅允许在其专属目录内自定义子文件夹路径。</span>
+                <div class="p-3 bg-blue-50/70 border border-blue-100 rounded-xl text-xs text-slate-600">
+                    <div class="font-semibold text-blue-900 flex items-center gap-1.5 mb-1">
+                        <i class="fa-solid fa-circle-info text-blue-600"></i>
+                        <span>默认下载至浏览器下载目录</span>
+                    </div>
+                    <p class="text-[11px] text-slate-500 leading-relaxed">
+                        视频在云端混流完成后，将自动拉起浏览器原生下载并保存至您设备的浏览器默认下载夹（手机相册/文件或电脑下载文件夹），无需在服务端指定路径。
+                    </p>
+                    <input id="settingSaveDir" type="hidden" value="">
                 </div>
                 <div>
                     <label class="text-xs font-semibold text-slate-600 mb-1 block">手动填入 B 站 SESSDATA (扫码登录将自动填入)</label>
@@ -543,6 +540,80 @@
         let qrCodeObj = null;
         let qrPollTimer = null;
         let pendingDownloadPayload = null;
+        let pendingAutoDownloadTaskIds = new Set();
+        let currentActiveTaskId = null;
+        let taskPollIntervalTimer = null;
+
+        function triggerBrowserDownload(url, filename) {
+            if (!url) return;
+            const a = document.createElement("a");
+            a.href = url;
+            if (filename) a.download = filename;
+            a.style.display = "none";
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                if (a.parentNode) a.parentNode.removeChild(a);
+            }, 2000);
+        }
+
+        function setDownloadBtnWorking(text) {
+            const btn = document.getElementById("startDownloadBtn");
+            const icon = document.getElementById("startDownloadIcon");
+            const label = document.getElementById("startDownloadText");
+            if (!btn || !label) return;
+            btn.disabled = true;
+            btn.className = "w-full bg-slate-800 text-white font-semibold py-3 px-4 rounded-xl shadow-lg transition flex items-center justify-center gap-2 cursor-wait opacity-90";
+            if (icon) icon.className = "fa-solid fa-circle-notch animate-spin text-blue-400";
+            label.innerText = text;
+        }
+
+        function setDownloadBtnProgress(percent, speedMB) {
+            const label = document.getElementById("startDownloadText");
+            if (label) {
+                label.innerText = `正在高速混流 (${percent}% - ${speedMB} MB/s)... 完成后自动拉起下载`;
+            }
+        }
+
+        function setDownloadBtnReady(dlUrl, filename) {
+            const btn = document.getElementById("startDownloadBtn");
+            const icon = document.getElementById("startDownloadIcon");
+            const label = document.getElementById("startDownloadText");
+            const forceBtn = document.getElementById("forceRedownloadBtn");
+            if (!btn || !label) return;
+            btn.disabled = false;
+            btn.className = "w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-emerald-500/20 transition flex items-center justify-center gap-2 active:scale-98 animate-pulse";
+            if (icon) icon.className = "fa-solid fa-circle-check text-white";
+            label.innerText = `🎉 混流完成！已拉起下载 (若未弹出请点此保存)`;
+            btn.onclick = () => triggerBrowserDownload(dlUrl, filename);
+            if (forceBtn) forceBtn.classList.remove("hidden");
+            stopHighSpeedPolling();
+        }
+
+        function resetDownloadBtn() {
+            const btn = document.getElementById("startDownloadBtn");
+            const icon = document.getElementById("startDownloadIcon");
+            const label = document.getElementById("startDownloadText");
+            if (!btn || !label) return;
+            btn.disabled = false;
+            btn.className = "w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-blue-500/20 transition flex items-center justify-center gap-2 active:scale-98";
+            if (icon) icon.className = "fa-solid fa-download";
+            label.innerText = "拉起浏览器下载";
+            btn.onclick = () => submitDownloadTask(false);
+            stopHighSpeedPolling();
+        }
+
+        function startHighSpeedPolling() {
+            if (taskPollIntervalTimer) clearInterval(taskPollIntervalTimer);
+            taskPollIntervalTimer = setInterval(refreshTasks, 1000);
+        }
+
+        function stopHighSpeedPolling() {
+            if (taskPollIntervalTimer) {
+                clearInterval(taskPollIntervalTimer);
+                taskPollIntervalTimer = setInterval(refreshTasks, 3000);
+            }
+        }
 
         function getToken() {
             return localStorage.getItem("bilidown_token") || "";
@@ -762,53 +833,14 @@
             const displaySaveDir = document.getElementById("displaySaveDir");
             const openFolderBtn = document.getElementById("openFolderBtn");
 
-            // 判断环境切换显示 PC本地保存路径条 vs 移动端直存提示条
-            const bannerDesktop = document.getElementById("storageBannerDesktop");
-            const bannerMobile = document.getElementById("storageBannerMobile");
-            if (bannerDesktop && bannerMobile) {
-                if (isLocalDesktop()) {
-                    bannerDesktop.classList.remove("hidden");
-                    bannerDesktop.classList.add("flex");
-                    bannerMobile.classList.add("hidden");
-                    bannerMobile.classList.remove("flex");
-                } else {
-                    bannerDesktop.classList.add("hidden");
-                    bannerDesktop.classList.remove("flex");
-                    bannerMobile.classList.remove("hidden");
-                    bannerMobile.classList.add("flex");
-                }
-            }
-
-            // 判断环境隐藏或显示 "打开主机目录"
-            if (openFolderBtn) {
-                if (isLocalDesktop()) {
-                    openFolderBtn.classList.remove("hidden");
-                } else {
-                    openFolderBtn.classList.add("hidden");
-                }
-            }
-
             const navAuthBtns = document.getElementById("navAuthBtns");
             if (window.currentSystemUser) {
                 if (navAuthBtns) navAuthBtns.classList.add("hidden");
                 navUserPill.classList.remove("hidden");
                 navSystemName.innerText = window.currentSystemUser.username;
                 dropdownUsername.innerText = `系统账号: ${window.currentSystemUser.username}`;
-
-                if (isLocalDesktop()) {
-                    dropdownSaveDir.innerText = `目录: ${window.currentSystemUser.save_dir}`;
-                    dropdownSaveDir.title = window.currentSystemUser.save_dir;
-                } else if (isMobileDevice()) {
-                    dropdownSaveDir.innerText = `存储: 📱 手机直存模式 (存至本地相册/文件)`;
-                    dropdownSaveDir.title = "视频下载混流完成后，在任务列表点击【存至手机】直接保存到本地";
-                } else {
-                    dropdownSaveDir.innerText = `存储: 🌐 远程下载模式 (浏览器直存)`;
-                    dropdownSaveDir.title = "视频下载混流完成后，在任务列表点击【下载到本地】直接保存到本机";
-                }
-
-                if (displaySaveDir) {
-                    displaySaveDir.innerText = window.currentSystemUser.save_dir;
-                }
+                dropdownSaveDir.innerText = "下载方式: 📥 浏览器默认下载目录";
+                dropdownSaveDir.title = "视频混流完成后自动拉起浏览器原生下载并保存至本机";
 
                 const bili = window.currentBiliUser;
                 if (bili && bili.is_login) {
@@ -1046,22 +1078,7 @@
             modal.classList.toggle("hidden");
             const s = getSettings();
             const saveDirInput = document.getElementById("settingSaveDir");
-            const saveDirLabel = document.getElementById("settingSaveDirLabel");
-            const saveDirHint = document.getElementById("settingSaveDirHint");
-
-            saveDirInput.value = s.saveDir;
-            if (!isLocalDesktop()) {
-                if (saveDirLabel) saveDirLabel.innerText = "服务端暂存目录 (云端混流缓存)";
-                if (saveDirHint) saveDirHint.innerText = "💡 手机端与远程访问无需修改此路径。视频在服务端混流完成后，在任务列表点击【存至手机】即可直接下载到手机本地。";
-                saveDirInput.disabled = true;
-                saveDirInput.classList.add("opacity-60", "cursor-not-allowed");
-            } else {
-                if (saveDirLabel) saveDirLabel.innerText = "个人专属保存路径";
-                if (saveDirHint) saveDirHint.innerText = "普通用户仅允许在其专属目录内自定义子文件夹路径。";
-                saveDirInput.disabled = false;
-                saveDirInput.classList.remove("opacity-60", "cursor-not-allowed");
-            }
-
+            if (saveDirInput) saveDirInput.value = s.saveDir;
             document.getElementById("settingTvMode").checked = s.tvMode;
             document.getElementById("settingAddDfn").checked = s.addDfn;
         }
@@ -1183,6 +1200,9 @@
                     renderQualityOptions(v.qualities);
                 }
 
+                resetDownloadBtn();
+                const forceBtn = document.getElementById("forceRedownloadBtn");
+                if (forceBtn) forceBtn.classList.add("hidden");
                 document.getElementById("resultCard").classList.remove("hidden");
             } catch (err) {
                 document.getElementById("resultCard").classList.add("hidden");
@@ -1217,7 +1237,7 @@
             await executeDownloadTask(payload);
         }
 
-        async function submitDownloadTask() {
+        async function submitDownloadTask(forceRedownload = false) {
             if (!window.currentSystemUser) {
                 openAuthModal('login');
                 return;
@@ -1246,37 +1266,47 @@
                 Title: currentVideoData.title,
                 QualityLabel: q.desc,
                 DfnTag: dfnTag,
-                ExpectedExt: expectedExt
+                ExpectedExt: expectedExt,
+                overwrite: forceRedownload
             };
 
-            // 检查个人保存目录冲突
-            try {
-                const checkParams = new URLSearchParams({
-                    title: currentVideoData.title,
-                    dfnTag: s.addDfn ? dfnTag : "",
-                    expectedExt: expectedExt,
-                    workDir: s.saveDir
-                });
-                const checkRes = await authFetch(`/api/check-file?${checkParams.toString()}`);
-                if (checkRes.ok) {
-                    const checkData = await checkRes.json();
-                    if (checkData.exists && checkData.file) {
-                        pendingDownloadPayload = payload;
-                        document.getElementById("conflictFileName").innerText = checkData.file.name;
-                        document.getElementById("conflictFileSize").innerText = checkData.file.size;
-                        document.getElementById("conflictQuality").innerText = q.desc;
-                        document.getElementById("fileConflictModal").classList.remove("hidden");
-                        return;
+            // 1. 若非强制重新抓取，优先检查服务端是否已有混流成品。若已存在，直接拉起浏览器原生下载！
+            if (!forceRedownload) {
+                try {
+                    const checkParams = new URLSearchParams({
+                        title: currentVideoData.title,
+                        dfnTag: s.addDfn ? dfnTag : "",
+                        expectedExt: expectedExt,
+                        workDir: s.saveDir
+                    });
+                    const checkRes = await authFetch(`/api/check-file?${checkParams.toString()}`);
+                    if (checkRes.ok) {
+                        const checkData = await checkRes.json();
+                        if (checkData.exists && checkData.file) {
+                            const token = getToken();
+                            const dlUrl = checkData.downloadUrl
+                                ? `${checkData.downloadUrl}&token=${encodeURIComponent(token)}`
+                                : `/api/file/download?path=${encodeURIComponent(checkData.file.path)}&token=${encodeURIComponent(token)}`;
+                            
+                            // 立即拉起浏览器原生下载并保存到浏览器默认下载目录
+                            triggerBrowserDownload(dlUrl, checkData.file.name);
+                            showToast(`⚡ 视频已在云端就绪，已直接拉起浏览器下载！`);
+                            setDownloadBtnReady(dlUrl, checkData.file.name);
+                            refreshTasks();
+                            return;
+                        }
                     }
+                } catch (checkErr) {
+                    console.warn("检查文件缓存失败，跳过直连:", checkErr);
                 }
-            } catch (checkErr) {
-                console.warn("检查文件冲突失败，跳过直接下载:", checkErr);
             }
 
+            // 2. 提交任务至后台并开启高速轮询，完成后自动拉起浏览器原生下载
             await executeDownloadTask(payload);
         }
 
         async function executeDownloadTask(payload) {
+            setDownloadBtnWorking("正在添加至云端下载队列...");
             try {
                 const res = await authFetch("/api/task/add", {
                     method: "POST",
@@ -1286,9 +1316,16 @@
                 const result = await res.json();
                 if (result.code !== 0) throw new Error(result.message || "添加任务失败");
 
-                showToast(`🚀 已添加下载任务：${payload.QualityLabel || '视频'}`);
+                if (result.taskId) {
+                    pendingAutoDownloadTaskIds.add(result.taskId);
+                    currentActiveTaskId = result.taskId;
+                }
+                setDownloadBtnWorking("正在云端高速下载与混流... 完成后将自动拉起下载");
+                showToast(`🚀 已启动下载与混流，完成后将自动拉起浏览器保存！`);
+                startHighSpeedPolling();
                 refreshTasks();
             } catch (e) {
+                resetDownloadBtn();
                 alert("提交任务失败: " + e.message);
             }
         }
@@ -1320,7 +1357,37 @@
                 const res = await authFetch("/api/tasks");
                 if (!res.ok) return;
                 const data = await res.json();
-                renderTaskList(data.Running || [], data.Finished || []);
+                const running = data.Running || [];
+                const finished = data.Finished || [];
+                const token = getToken();
+
+                // 1. 如果有活跃正在下载的任务，更新主按钮进度
+                if (currentActiveTaskId) {
+                    const activeRun = running.find(r => r.Id === currentActiveTaskId || (currentVideoData && (r.Url === currentVideoData.url || (r.Aid && String(r.Aid) === String(currentVideoData.aid)))));
+                    if (activeRun) {
+                        const percent = Math.round((activeRun.Progress || 0) * 100);
+                        const speedMB = (activeRun.DownloadSpeed / (1024 * 1024)).toFixed(1);
+                        setDownloadBtnProgress(percent, speedMB);
+                    }
+                }
+
+                // 2. 检查是否有等待自动拉起浏览器下载的任务完成
+                if (pendingAutoDownloadTaskIds.size > 0) {
+                    finished.forEach(t => {
+                        if (pendingAutoDownloadTaskIds.has(t.Id) && t.FileExists) {
+                            pendingAutoDownloadTaskIds.delete(t.Id);
+                            if (currentActiveTaskId === t.Id) {
+                                currentActiveTaskId = null;
+                            }
+                            const dlUrl = `${t.DownloadUrl}&token=${encodeURIComponent(token)}`;
+                            triggerBrowserDownload(dlUrl, t.ActualFileName);
+                            showToast(`🎉 视频混流完成，已自动拉起浏览器下载！`);
+                            setDownloadBtnReady(dlUrl, t.ActualFileName);
+                        }
+                    });
+                }
+
+                renderTaskList(running, finished);
             } catch (e) {
                 console.log("轮询任务列表状态失败:", e);
             }
@@ -1453,7 +1520,7 @@
             if (window.currentSystemUser) {
                 refreshTasks();
             }
-            setInterval(refreshTasks, 3000);
+            taskPollIntervalTimer = setInterval(refreshTasks, 3000);
         })();
     </script>
 </body>

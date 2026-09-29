@@ -861,7 +861,7 @@ class WebUIHandler(SimpleHTTPRequestHandler):
 
             return self.send_json(200, {"Running": user_running, "Finished": user_finished})
 
-        # 10. 检查保存目录中是否已存在同名/同画质文件
+        # 10. 检查保存目录中是否已存在同名/同画质文件 (支持返回直链即时拉起下载)
         if path == "/api/check-file":
             user = self.get_current_user(query)
             if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
@@ -875,10 +875,18 @@ class WebUIHandler(SimpleHTTPRequestHandler):
 
             match_info = find_specific_task_file(title, dfn_tag, expected_ext, work_dir)
             if match_info:
+                user_db_tasks = db.get_user_tasks(user["id"]) if user else []
+                matched_task = next((t for t in reversed(user_db_tasks) if t["title"] == title and (not dfn_tag or t["dfn_tag"] == dfn_tag)), None)
+                task_id = matched_task["id"] if matched_task else None
+                dl_url = f"/api/file/download?id={task_id}" if task_id else f"/api/file/download?path={urllib.parse.quote(match_info['path'])}"
+                st_url = f"/api/file/stream?id={task_id}" if task_id else f"/api/file/stream?path={urllib.parse.quote(match_info['path'])}"
                 return self.send_json(200, {
                     "code": 0,
                     "exists": True,
-                    "file": match_info
+                    "file": match_info,
+                    "taskId": task_id,
+                    "downloadUrl": dl_url,
+                    "streamUrl": st_url
                 })
             else:
                 return self.send_json(200, {
