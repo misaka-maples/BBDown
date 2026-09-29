@@ -169,26 +169,6 @@
             <span class="flex items-center gap-1"><i class="fa-solid fa-crown text-pink-500"></i> 大会员 4K/原画</span>
         </div>
 
-        <!-- 浏览器原生下载模式指示栏 -->
-        <div class="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 w-full px-4 py-2.5 bg-gradient-to-r from-blue-50/90 via-indigo-50/60 to-emerald-50/80 border border-blue-100 rounded-2xl text-xs text-slate-700 shadow-sm">
-            <div class="flex items-center gap-2.5">
-                <div class="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-blue-500/30">
-                    <i class="fa-solid fa-download text-xs"></i>
-                </div>
-                <div class="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2">
-                    <span class="font-bold text-slate-800">📥 浏览器直下模式</span>
-                    <span class="text-slate-500 text-[11px] sm:text-xs">
-                        解析选好画质后，云端混流完成将<strong>自动拉起浏览器下载</strong>，直接保存至手机相册/文件或电脑<strong>浏览器默认下载目录</strong>，无需指定服务端路径。
-                    </span>
-                </div>
-            </div>
-            <div class="flex items-center gap-2 self-end sm:self-center shrink-0">
-                <button onclick="toggleSettingsModal()" class="text-slate-500 hover:text-blue-600 font-medium flex items-center gap-1 transition whitespace-nowrap ml-2">
-                    <i class="fa-solid fa-gear"></i>
-                    <span>偏好设置</span>
-                </button>
-            </div>
-        </div>
 
         <!-- 加载中动画 -->
         <div id="loading" class="hidden mt-10 flex flex-col items-center gap-3">
@@ -251,7 +231,7 @@
             <div class="flex items-center justify-between mb-3">
                 <h3 class="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
                     <i class="fa-solid fa-list-check text-blue-500"></i>
-                    <span>下载任务列表 (当前用户专属)</span>
+                    <span>下载任务列表</span>
                 </h3>
                 <div class="flex items-center gap-3">
                     <button onclick="clearTasks()" class="text-xs text-slate-400 hover:text-rose-600 flex items-center gap-1 transition" title="清空下载历史记录">
@@ -379,26 +359,12 @@
     <div id="settingsModal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
             <div class="flex justify-between items-center pb-4 border-b border-slate-100">
-                <h4 class="font-bold text-slate-800 text-base">下载与个人配置</h4>
+                <h4 class="font-bold text-slate-800 text-base">下载偏好设置</h4>
                 <button onclick="toggleSettingsModal()" class="text-slate-400 hover:text-slate-600 text-sm">
                     <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
             <div class="space-y-4 mt-4">
-                <div class="p-3 bg-blue-50/70 border border-blue-100 rounded-xl text-xs text-slate-600">
-                    <div class="font-semibold text-blue-900 flex items-center gap-1.5 mb-1">
-                        <i class="fa-solid fa-circle-info text-blue-600"></i>
-                        <span>默认下载至浏览器下载目录</span>
-                    </div>
-                    <p class="text-[11px] text-slate-500 leading-relaxed">
-                        视频在云端混流完成后，将自动拉起浏览器原生下载并保存至您设备的浏览器默认下载夹（手机相册/文件或电脑下载文件夹），无需在服务端指定路径。
-                    </p>
-                    <input id="settingSaveDir" type="hidden" value="">
-                </div>
-                <div>
-                    <label class="text-xs font-semibold text-slate-600 mb-1 block">手动填入 B 站 SESSDATA (扫码登录将自动填入)</label>
-                    <input id="settingCookie" type="password" placeholder="可手动填入已有的 SESSDATA" class="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500">
-                </div>
                 <div class="flex items-center justify-between pt-2">
                     <div>
                         <span class="text-xs font-medium text-slate-700 block">启用 TV 端解析模式</span>
