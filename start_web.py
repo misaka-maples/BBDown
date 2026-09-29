@@ -1196,7 +1196,7 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json(500, {"code": -1, "message": f"添加任务失败: {e}"})
 
-        return super().do_POST()
+        return self.send_json(404, {"code": 404, "message": "API endpoint not found"})
 
 def start_bbdown_server():
     cmd = ["BBDown", "dummy", "serve", "-l", f"http://127.0.0.1:{SERVER_PORT}"]
