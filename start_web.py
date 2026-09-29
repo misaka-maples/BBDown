@@ -639,23 +639,33 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         # 2. 手机端与远程浏览器文件直接下载 & 在线流式播放
         if path in ("/api/file/download", "/api/file/stream"):
             user = self.get_current_user(query)
-            if not user:
-                return self.send_json(401, {"code": 401, "message": "未登录或登录已过期，请先登录系统"})
-
             file_path = ""
             task_id_str = query.get("id", [""])[0].strip()
             if task_id_str.isdigit():
-                task = db.get_user_task_by_id(user["id"], int(task_id_str))
+                task_id = int(task_id_str)
+                task = db.get_user_task_by_id(user["id"], task_id) if user else None
+                if not task:
+                    task = db.get_task_by_id(task_id)
                 if task:
-                    work_dir = task["work_dir"] or get_user_work_dir(user)
+                    work_dir = task.get("work_dir") or (get_user_work_dir(user) if user else DEFAULT_DOWNLOAD_DIR)
                     match_info = find_specific_task_file(task["title"], task["dfn_tag"], task["expected_ext"], work_dir)
                     if match_info:
                         file_path = match_info["path"]
+                    elif os.path.isdir(work_dir):
+                        clean_title = get_bbdown_valid_title(task["title"])
+                        for fname in os.listdir(work_dir):
+                            if fname.endswith((".mp4", ".m4a", ".mkv")):
+                                if clean_title in fname or task["title"] in fname:
+                                    file_path = os.path.join(work_dir, fname)
+                                    break
 
             if not file_path:
                 req_path = query.get("path", [""])[0].strip()
-                if req_path and is_path_safe_for_user(user, req_path):
-                    file_path = req_path
+                if req_path:
+                    real_req = os.path.realpath(req_path)
+                    real_root = os.path.realpath(DEFAULT_DOWNLOAD_DIR)
+                    if os.path.commonpath([real_root, real_req]) == real_root and os.path.isfile(real_req):
+                        file_path = real_req
 
             if not file_path or not os.path.isfile(file_path):
                 return self.send_json(404, {"code": 404, "message": "文件未找到或已被移出保存目录"})

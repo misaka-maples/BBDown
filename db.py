@@ -320,6 +320,16 @@ def get_user_task_by_id(user_id, task_id):
     conn.close()
     return dict(row) if row else None
 
+def get_task_by_id(task_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+    SELECT * FROM tasks WHERE id = ? AND is_removed = 0
+    """, (task_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
 def remove_user_task(user_id, task_id_or_aid):
     conn = get_connection()
     c = conn.cursor()

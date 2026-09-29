@@ -553,6 +553,7 @@
                 cid = "c_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 9);
                 localStorage.setItem("bbdown_client_id", cid);
             }
+            document.cookie = `bilidown_client_id=${cid}; path=/; max-age=31536000; SameSite=Lax`;
             return cid;
         }
 
@@ -1147,9 +1148,10 @@
                         const checkData = await checkRes.json();
                         if (checkData.exists && checkData.file) {
                             const token = getToken();
+                            const cid = getClientId();
                             const dlUrl = checkData.downloadUrl
-                                ? `${checkData.downloadUrl}&token=${encodeURIComponent(token)}`
-                                : `/api/file/download?path=${encodeURIComponent(checkData.file.path)}&token=${encodeURIComponent(token)}`;
+                                ? `${checkData.downloadUrl}&client_id=${encodeURIComponent(cid)}&token=${encodeURIComponent(token)}`
+                                : `/api/file/download?path=${encodeURIComponent(checkData.file.path)}&client_id=${encodeURIComponent(cid)}&token=${encodeURIComponent(token)}`;
                             
                             // 立即拉起浏览器原生下载并保存到浏览器默认下载目录
                             triggerBrowserDownload(dlUrl, checkData.file.name);
@@ -1241,7 +1243,8 @@
                             if (currentActiveTaskId === t.Id) {
                                 currentActiveTaskId = null;
                             }
-                            const dlUrl = `${t.DownloadUrl}&token=${encodeURIComponent(token)}`;
+                            const cid = getClientId();
+                            const dlUrl = `${t.DownloadUrl}&client_id=${encodeURIComponent(cid)}&token=${encodeURIComponent(token)}`;
                             triggerBrowserDownload(dlUrl, t.ActualFileName);
                             showToast(`🎉 视频混流完成，已自动拉起浏览器下载！`);
                             setDownloadBtnReady(dlUrl, t.ActualFileName);
@@ -1312,9 +1315,10 @@
                     sizeDisplay = `<span class="text-xs text-slate-500 font-mono">体积: ${mb} MB</span>`;
                 }
 
-                // 带有 token 凭据的移动端与流式 URL
-                const dlUrl = `${t.DownloadUrl}&token=${encodeURIComponent(token)}`;
-                const stUrl = `${t.StreamUrl}&token=${encodeURIComponent(token)}`;
+                // 带有 token 与 client_id 凭据的移动端与流式 URL
+                const cid = getClientId();
+                const dlUrl = `${t.DownloadUrl}&client_id=${encodeURIComponent(cid)}&token=${encodeURIComponent(token)}`;
+                const stUrl = `${t.StreamUrl}&client_id=${encodeURIComponent(cid)}&token=${encodeURIComponent(token)}`;
                 const isLocal = isLocalDesktop();
                 const isMobile = isMobileDevice();
                 const dlText = isMobile ? "存至手机" : "下载到本地";
