@@ -10,10 +10,12 @@ import time
 import sqlite3
 import hashlib
 import secrets
+import tempfile
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(CURRENT_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "bilidown.db")
+TEMP_CACHE_DIR = os.environ.get("BBDOWN_CACHE_DIR", os.path.join(tempfile.gettempdir(), "bbdown_cache"))
 
 def get_connection():
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -152,22 +154,33 @@ def get_user_by_username(username):
     conn.close()
     return dict(row) if row else None
 
-def get_or_create_client_user(client_id, default_download_dir):
+def get_or_create_client_user(client_id, default_download_dir=None, cache_dir=None):
+    """
+    基于客户端唯一 ID 自动分配/获取独立访客账号。
+    访客文件存储在独立临时缓存目录中，与本机主下载目录完全隔离，便于每日自动清理。
+    """
     if not client_id:
         client_id = "guest"
     safe_name = "c_" + re.sub(r'[^a-zA-Z0-9_]', '_', client_id)[:24]
+    base_dir = cache_dir or os.path.join(TEMP_CACHE_DIR, "clients")
+    user_dir = os.path.join(base_dir, safe_name)
+    os.makedirs(user_dir, exist_ok=True)
     conn = get_connection()
     c = conn.cursor()
     try:
         c.execute("SELECT id, username, bili_cookie, custom_save_dir, created_at FROM users WHERE username = ?", (safe_name,))
         row = c.fetchone()
         if row:
-            return dict(row), None
+            user_data = dict(row)
+            # 自动迁移旧路径：如果是旧的 ~/Downloads/clients 路径，同步升级到临时目录
+            if user_data.get("custom_save_dir") != user_dir:
+                c.execute("UPDATE users SET custom_save_dir = ? WHERE id = ?", (user_dir, user_data["id"]))
+                conn.commit()
+                user_data["custom_save_dir"] = user_dir
+            return user_data, None
         else:
             salt = secrets.token_hex(16)
             pwd_hash = hash_password(secrets.token_hex(16), salt)
-            user_dir = os.path.join(default_download_dir, "clients", safe_name)
-            os.makedirs(user_dir, exist_ok=True)
             c.execute("""
             INSERT INTO users (username, password_hash, salt, bili_cookie, custom_save_dir, created_at)
             VALUES (?, ?, ?, '', ?, ?)
@@ -324,7 +337,7 @@ def get_task_by_id(task_id):
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
-    SELECT * FROM tasks WHERE id = ? AND is_removed = 0
+    SELECT * FROM tasks WHERE id = ?
     """, (task_id,))
     row = c.fetchone()
     conn.close()
@@ -344,6 +357,31 @@ def clear_user_tasks(user_id):
     conn = get_connection()
     c = conn.cursor()
     c.execute("UPDATE tasks SET is_removed = 1 WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def clean_expired_client_tasks(expired_before_time, clients_cache_dir):
+    """
+    仅将临时缓存目录中已超期的访客任务标记为移除，确保不影响正式用户任务
+    """
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("""
+    UPDATE tasks 
+    SET is_removed = 1 
+    WHERE add_time < ? AND work_dir LIKE ?
+    """, (expired_before_time, f"{clients_cache_dir}%"))
+    conn.commit()
+    conn.close()
+
+def migrate_client_paths_in_db(old_base, new_base):
+    """
+    迁移数据库中存留的旧 client 路径至新临时缓存目录
+    """
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("UPDATE users SET custom_save_dir = replace(custom_save_dir, ?, ?) WHERE custom_save_dir LIKE ?", (old_base, new_base, f"{old_base}%"))
+    c.execute("UPDATE tasks SET work_dir = replace(work_dir, ?, ?) WHERE work_dir LIKE ?", (old_base, new_base, f"{old_base}%"))
     conn.commit()
     conn.close()
 

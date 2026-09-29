@@ -18,6 +18,8 @@ import re
 import http.cookiejar
 import mimetypes
 import threading
+import tempfile
+import shutil
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 
 import db
@@ -32,6 +34,11 @@ WEB_PORT = 58683
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(CURRENT_DIR, "web")
 DEFAULT_DOWNLOAD_DIR = os.path.expanduser("~/Downloads")
+
+# 访客/客户端临时缓存根目录 (严格独立，专门用于手机与浏览器直下任务的临时音视频合成，每日自动清理，绝不污染用户主目录)
+TEMP_CACHE_DIR = os.environ.get("BBDOWN_CACHE_DIR", os.path.join(tempfile.gettempdir(), "bbdown_cache"))
+CLIENT_CACHE_DIR = os.path.join(TEMP_CACHE_DIR, "clients")
+os.makedirs(CLIENT_CACHE_DIR, exist_ok=True)
 
 DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
@@ -141,9 +148,9 @@ def is_path_safe_for_user(user, target_path):
         target = os.path.realpath(target_path)
         if not os.path.exists(target):
             return False
-        # admin 权限：允许访问默认下载目录根目录及其下任何用户目录
+        # admin 权限：允许访问默认下载目录根目录及其下任何用户目录，以及临时缓存目录
         if user.get("username") == "admin":
-            allowed_roots = [os.path.realpath(DEFAULT_DOWNLOAD_DIR)]
+            allowed_roots = [os.path.realpath(DEFAULT_DOWNLOAD_DIR), os.path.realpath(TEMP_CACHE_DIR)]
             if user.get("custom_save_dir"):
                 allowed_roots.append(os.path.realpath(user["custom_save_dir"]))
             for root in allowed_roots:
@@ -151,11 +158,121 @@ def is_path_safe_for_user(user, target_path):
                     return True
             return False
 
-        # 普通用户：严格限定在其个人保存目录内，彻底防止跨目录与路径遍历穿越攻击
+        # 普通用户与访客：严格限定在其个人保存/缓存目录内，彻底防止跨目录与路径遍历穿越攻击
         user_root = os.path.realpath(get_user_work_dir(user))
         return os.path.commonpath([user_root, target]) == user_root
     except Exception:
         return False
+
+def clean_temp_cache(max_age_seconds=86400):
+    """
+    仅针对访客客户端的临时下载缓存目录执行自动清理：
+    1. 严格限定在 CLIENT_CACHE_DIR (/tmp/bbdown_cache/clients) 目录内
+    2. 删除修改时间超过 max_age_seconds (默认 24 小时) 的音视频及分片缓存文件
+    3. 清理已空的 client 访客子文件夹
+    4. 同步将数据库中对应已过期的临时客户端任务标记为已清理，避免数据残留
+    绝对不会触碰任何用户的正式保存目录 (DEFAULT_DOWNLOAD_DIR / users)
+    """
+    try:
+        clients_cache_dir = os.path.realpath(CLIENT_CACHE_DIR)
+        if not os.path.exists(clients_cache_dir):
+            return {"cleaned_files": 0, "freed_bytes": 0}
+
+        real_default = os.path.realpath(DEFAULT_DOWNLOAD_DIR)
+        real_home = os.path.realpath(os.path.expanduser("~"))
+        real_temp_cache = os.path.realpath(TEMP_CACHE_DIR)
+
+        if clients_cache_dir in ("/", real_home, real_default) or not clients_cache_dir.startswith(real_temp_cache):
+            print(f"[!] 缓存清理安全拦截：路径异常 {clients_cache_dir}", flush=True)
+            return {"cleaned_files": 0, "freed_bytes": 0}
+
+        now = time.time()
+        cleaned_files = 0
+        freed_bytes = 0
+
+        for root, dirs, files in os.walk(clients_cache_dir, topdown=False):
+            real_root = os.path.realpath(root)
+            if os.path.commonpath([clients_cache_dir, real_root]) != clients_cache_dir:
+                continue
+            for f in files:
+                file_path = os.path.join(root, f)
+                try:
+                    stat = os.stat(file_path)
+                    if now - stat.st_mtime > max_age_seconds:
+                        size = stat.st_size
+                        os.remove(file_path)
+                        cleaned_files += 1
+                        freed_bytes += size
+                except Exception as e:
+                    print(f"[!] 清理缓存文件失败 {file_path}: {e}", flush=True)
+
+            if real_root != clients_cache_dir:
+                try:
+                    if not os.listdir(real_root):
+                        os.rmdir(real_root)
+                except Exception:
+                    pass
+
+        try:
+            db.clean_expired_client_tasks(now - max_age_seconds, clients_cache_dir)
+        except Exception as e:
+            print(f"[!] 清理数据库过期访客任务异常: {e}", flush=True)
+
+        if cleaned_files > 0:
+            mb = round(freed_bytes / (1024 * 1024), 2)
+            print(f"[🧹 缓存自动清理] 成功清理 {cleaned_files} 个临时文件，释放磁盘空间 {mb} MB", flush=True)
+        return {"cleaned_files": cleaned_files, "freed_bytes": freed_bytes}
+    except Exception as e:
+        print(f"[!] 临时缓存清理过程异常: {e}", flush=True)
+        return {"cleaned_files": 0, "freed_bytes": 0}
+
+def cache_cleaner_daemon():
+    """
+    后台定时守护线程：每日自动清理访客临时下载缓存 (每 1 小时检查一次超过 24 小时的缓存)
+    """
+    time.sleep(3)
+    clean_temp_cache(max_age_seconds=24 * 3600)
+    while True:
+        time.sleep(3600)
+        clean_temp_cache(max_age_seconds=24 * 3600)
+
+def migrate_existing_clients_to_temp(old_download_dir, new_client_cache_dir):
+    """
+    将旧版存放在 ~/Downloads/clients 的数据一次性无损迁移至 /tmp/bbdown_cache/clients，
+    并彻底删除旧的 ~/Downloads/clients 目录，保持用户下载文件夹整洁
+    """
+    old_clients_dir = os.path.join(old_download_dir, "clients")
+    if os.path.isdir(old_clients_dir):
+        os.makedirs(new_client_cache_dir, exist_ok=True)
+        for item in os.listdir(old_clients_dir):
+            src = os.path.join(old_clients_dir, item)
+            dst = os.path.join(new_client_cache_dir, item)
+            try:
+                if os.path.isdir(src):
+                    if os.path.exists(dst):
+                        for f in os.listdir(src):
+                            fsrc = os.path.join(src, f)
+                            fdst = os.path.join(dst, f)
+                            if not os.path.exists(fdst):
+                                shutil.move(fsrc, fdst)
+                        shutil.rmtree(src, ignore_errors=True)
+                    else:
+                        shutil.move(src, dst)
+            except Exception as e:
+                print(f"[!] 迁移客户端目录 {src} 异常: {e}", flush=True)
+        try:
+            if not os.listdir(old_clients_dir):
+                os.rmdir(old_clients_dir)
+            else:
+                shutil.rmtree(old_clients_dir, ignore_errors=True)
+            print(f"[✓] 已将原下载目录下的 clients 成功迁移至临时目录 {new_client_cache_dir}，旧目录已彻底清除", flush=True)
+        except Exception as e:
+            print(f"[!] 清除旧 clients 目录异常: {e}", flush=True)
+
+        try:
+            db.migrate_client_paths_in_db(old_clients_dir, new_client_cache_dir)
+        except Exception as e:
+            print(f"[!] 数据库迁移旧路径异常: {e}", flush=True)
 
 QUALITY_CONFIG = {
     127: {"dfn_tag": "8K 超高清", "dfn_priority": "8K 超高清", "fallback_kbps": 11000},
@@ -488,7 +605,7 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         if not client_id:
             client_id = f"ip_{self.client_address[0]}"
 
-        user, _ = db.get_or_create_client_user(client_id, DEFAULT_DOWNLOAD_DIR)
+        user, _ = db.get_or_create_client_user(client_id, DEFAULT_DOWNLOAD_DIR, CLIENT_CACHE_DIR)
         return user
 
     def send_file_range(self, file_path, is_stream=False):
@@ -663,8 +780,8 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                 req_path = query.get("path", [""])[0].strip()
                 if req_path:
                     real_req = os.path.realpath(req_path)
-                    real_root = os.path.realpath(DEFAULT_DOWNLOAD_DIR)
-                    if os.path.commonpath([real_root, real_req]) == real_root and os.path.isfile(real_req):
+                    allowed_roots = [os.path.realpath(DEFAULT_DOWNLOAD_DIR), os.path.realpath(TEMP_CACHE_DIR)]
+                    if any(os.path.commonpath([r, real_req]) == r for r in allowed_roots) and os.path.isfile(real_req):
                         file_path = real_req
 
             if not file_path or not os.path.isfile(file_path):
@@ -695,6 +812,38 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             return self.send_json(200, {
                 "default_download_dir": user_dir,
                 "server_port": SERVER_PORT
+            })
+
+        # 4.1 访客临时缓存统计与手动清理接口 (仅对 clients 缓存有效)
+        if path == "/api/cache/stats":
+            clients_cache_dir = os.path.realpath(CLIENT_CACHE_DIR)
+            total_size = 0
+            file_count = 0
+            if os.path.exists(clients_cache_dir):
+                for root, _, files in os.walk(clients_cache_dir):
+                    for f in files:
+                        try:
+                            fp = os.path.join(root, f)
+                            total_size += os.path.getsize(fp)
+                            file_count += 1
+                        except Exception:
+                            pass
+            return self.send_json(200, {
+                "code": 0,
+                "cache_dir": CLIENT_CACHE_DIR,
+                "file_count": file_count,
+                "total_size_bytes": total_size,
+                "total_size_mb": round(total_size / (1024 * 1024), 2)
+            })
+
+        if path == "/api/cache/clean":
+            force = query.get("force", ["0"])[0] in ("1", "true")
+            max_age = 0 if force else 24 * 3600
+            res = clean_temp_cache(max_age_seconds=max_age)
+            return self.send_json(200, {
+                "code": 0,
+                "message": f"缓存清理完成，已清理 {res['cleaned_files']} 个临时文件，释放 {round(res['freed_bytes'] / (1024 * 1024), 2)} MB 空间",
+                "result": res
             })
 
         # 5. 申请 B 站登录二维码
@@ -809,7 +958,7 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             user = self.get_current_user(query)
             if not user:
                 client_id = extract_client_id_from_request(self.headers, query)
-                user, _ = db.get_or_create_client_user(client_id, DEFAULT_DOWNLOAD_DIR)
+                user, _ = db.get_or_create_client_user(client_id, DEFAULT_DOWNLOAD_DIR, CLIENT_CACHE_DIR)
 
             user_work_dir = get_user_work_dir(user)
             user_db_tasks = db.get_user_tasks(user["id"])
@@ -1106,7 +1255,7 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             user = self.get_current_user()
             if not user:
                 client_id = extract_client_id_from_request(self.headers)
-                user, _ = db.get_or_create_client_user(client_id, DEFAULT_DOWNLOAD_DIR)
+                user, _ = db.get_or_create_client_user(client_id, DEFAULT_DOWNLOAD_DIR, CLIENT_CACHE_DIR)
 
             content_len = int(self.headers.get("Content-Length", 0))
             post_body = self.rfile.read(content_len)
@@ -1229,6 +1378,13 @@ def main():
     # 0. 初始化数据库 (建表并创建初始管理员 admin / admin123)
     db.init_db(DEFAULT_DOWNLOAD_DIR)
 
+    # 迁移旧版本存在于 ~/Downloads/clients 中的目录至新的临时缓存目录，并清理旧目录
+    migrate_existing_clients_to_temp(DEFAULT_DOWNLOAD_DIR, CLIENT_CACHE_DIR)
+
+    # 启动后台每日缓存自动清理守护线程 (仅针对临时缓存，严格隔离正式用户目录)
+    cleaner_thread = threading.Thread(target=cache_cleaner_daemon, daemon=True)
+    cleaner_thread.start()
+
     # 1. 启动 BBDown Api Server
     bbdown_proc = start_bbdown_server()
     time.sleep(1.2)
@@ -1239,6 +1395,7 @@ def main():
     print("🎉 BiliDown Web UI 多用户服务已成功启动！", flush=True)
     print(f"👉 浏览器访问: http://localhost:{WEB_PORT}", flush=True)
     print(f"📂 默认根保存路径: {DEFAULT_DOWNLOAD_DIR}", flush=True)
+    print(f"🧹 访客临时缓存路径: {CLIENT_CACHE_DIR} (每日自动清理)", flush=True)
     print(f"🔐 默认管理员账号: admin / admin123", flush=True)
     print("=" * 65, flush=True)
     print("按 Ctrl+C 停止服务...", flush=True)
