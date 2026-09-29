@@ -288,8 +288,11 @@
                     <input id="settingCookie" type="password" placeholder="可手动填入已有的 SESSDATA" class="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500">
                 </div>
                 <div class="flex items-center justify-between pt-2">
-                    <span class="text-xs font-medium text-slate-700">启用 TV 模式 (推荐，防 412 拦截)</span>
-                    <input id="settingTvMode" type="checkbox" checked class="w-4 h-4 text-blue-600 rounded">
+                    <div>
+                        <span class="text-xs font-medium text-slate-700 block">启用 TV 端解析模式</span>
+                        <span class="text-[11px] text-slate-400">仅限拥有 TV 端独立会员时开启，普通大会员请保持关闭</span>
+                    </div>
+                    <input id="settingTvMode" type="checkbox" class="w-4 h-4 text-blue-600 rounded">
                 </div>
                 <div class="flex items-center justify-between pt-2 border-t border-slate-100">
                     <div>
@@ -305,6 +308,52 @@
         </div>
     </div>
 
+    <!-- 同名文件冲突处理弹窗 -->
+    <div id="fileConflictModal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+            <div class="flex items-center gap-3 pb-3 border-b border-slate-100">
+                <div class="w-10 h-10 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center text-lg shrink-0">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <div>
+                    <h4 class="font-bold text-slate-800 text-base">目标文件已存在</h4>
+                    <p class="text-xs text-slate-400">下载目录中已检测到相同清晰度的视频文件</p>
+                </div>
+            </div>
+            
+            <div class="mt-4 bg-slate-50 rounded-xl p-3 border border-slate-100">
+                <div class="text-xs text-slate-700 font-medium break-all mb-1.5 flex items-start gap-2">
+                    <i class="fa-regular fa-file-video text-blue-500 mt-0.5"></i>
+                    <span id="conflictFileName">文件名</span>
+                </div>
+                <div class="text-[11px] text-slate-400 flex items-center gap-3">
+                    <span>当前大小: <b id="conflictFileSize" class="text-slate-600">-- MB</b></span>
+                    <span>目标画质: <b id="conflictQuality" class="text-blue-600">--</b></span>
+                </div>
+            </div>
+
+            <p class="text-xs text-slate-500 my-4 leading-relaxed">
+                请选择如何处理本次下载：<br>
+                • <b>覆盖原文件</b>：将彻底删除旧文件并重新下载完整数据。<br>
+                • <b>生成副本</b>：保留现有文件，将新文件命名为 <code>(1)</code>, <code>(2)</code> 继续下载。
+            </p>
+
+            <div class="flex flex-col sm:flex-row gap-2.5">
+                <button onclick="resolveConflict('overwrite')" class="flex-1 bg-red-500 hover:bg-red-600 text-white font-medium text-xs py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm shadow-red-500/20">
+                    <i class="fa-solid fa-rotate-right"></i>
+                    <span>覆盖并重新下载</span>
+                </button>
+                <button onclick="resolveConflict('rename')" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs py-2.5 px-3 rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm shadow-blue-500/20">
+                    <i class="fa-solid fa-clone"></i>
+                    <span>保留并生成副本</span>
+                </button>
+                <button onclick="closeConflictModal()" class="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-medium rounded-xl transition">
+                    取消
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- 底部版权 -->
     <footer class="w-full max-w-5xl py-8 text-center text-xs text-slate-400">
         © 2026 BiliDown Web UI · Powered by BBDown & nilaoda
@@ -316,6 +365,7 @@
         let currentVideoData = null;
         let qrCodeObj = null;
         let qrPollTimer = null;
+        let pendingDownloadPayload = null;
 
         // 本地配置读取与保存
         function getSettings() {
@@ -323,7 +373,7 @@
                 serverUrl: localStorage.getItem("bbdown_server_url") || "http://127.0.0.1:58682",
                 saveDir: localStorage.getItem("bbdown_save_dir") || "/home/maple/Downloads",
                 cookie: localStorage.getItem("bbdown_cookie") || "",
-                tvMode: localStorage.getItem("bbdown_tv_mode") !== "false",
+                tvMode: localStorage.getItem("bbdown_tv_mode") === "true",
                 addDfn: localStorage.getItem("bbdown_add_dfn") !== "false"
             };
         }
@@ -677,6 +727,25 @@
             return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
         }
 
+        function closeConflictModal() {
+            document.getElementById("fileConflictModal").classList.add("hidden");
+            pendingDownloadPayload = null;
+        }
+
+        async function resolveConflict(action) {
+            if (!pendingDownloadPayload) return closeConflictModal();
+            const payload = { ...pendingDownloadPayload };
+            closeConflictModal();
+
+            if (action === 'overwrite') {
+                payload.overwrite = true;
+                payload.conflictMode = 'overwrite';
+            } else if (action === 'rename') {
+                payload.conflictMode = 'rename';
+            }
+            await executeDownloadTask(payload);
+        }
+
         // 发送下载任务给 BBDown Api Server
         async function submitDownloadTask() {
             if (!currentVideoData || !selectedQualityObj) return alert("请先解析视频！");
@@ -689,10 +758,13 @@
                 filePattern = isAudio ? "<videoTitle> [仅音频]" : "<videoTitle> [<dfn>]";
             }
 
+            const expectedExt = isAudio ? ".m4a" : ".mp4";
+            const dfnTag = q.dfn_tag || (isAudio ? "仅音频" : q.desc);
+
             const payload = {
                 Url: currentVideoData.url,
+                Aid: currentVideoData.aid,
                 UseTvApi: s.tvMode,
-                UserAgent: "curl/8.5.0",
                 DfnPriority: isAudio ? null : (q.dfn || q.desc),
                 AudioOnly: isAudio,
                 FilePattern: filePattern,
@@ -700,8 +772,8 @@
                 // 附加精准元数据，确保任务列表精确显示
                 Title: currentVideoData.title,
                 QualityLabel: q.desc,
-                DfnTag: q.dfn_tag || (isAudio ? "仅音频" : q.desc),
-                ExpectedExt: isAudio ? ".m4a" : ".mp4"
+                DfnTag: dfnTag,
+                ExpectedExt: expectedExt
             };
 
             const cookieToUse = s.cookie || localStorage.getItem("bbdown_cookie") || "";
@@ -709,6 +781,34 @@
                 payload.Cookie = cookieToUse.startsWith("SESSDATA=") ? cookieToUse : `SESSDATA=${cookieToUse}`;
             }
 
+            // 先检查本地是否存在同名同画质文件
+            try {
+                const checkParams = new URLSearchParams({
+                    title: currentVideoData.title,
+                    dfnTag: dfnTag,
+                    expectedExt: expectedExt,
+                    workDir: s.saveDir || "/home/maple/Downloads"
+                });
+                const checkRes = await fetch(`/api/check-file?${checkParams.toString()}`);
+                if (checkRes.ok) {
+                    const checkData = await checkRes.json();
+                    if (checkData.exists && checkData.file) {
+                        pendingDownloadPayload = payload;
+                        document.getElementById("conflictFileName").innerText = checkData.file.name;
+                        document.getElementById("conflictFileSize").innerText = checkData.file.size;
+                        document.getElementById("conflictQuality").innerText = q.desc;
+                        document.getElementById("fileConflictModal").classList.remove("hidden");
+                        return;
+                    }
+                }
+            } catch (checkErr) {
+                console.warn("检查文件冲突失败，跳过直接下载:", checkErr);
+            }
+
+            await executeDownloadTask(payload);
+        }
+
+        async function executeDownloadTask(payload) {
             try {
                 const res = await fetch("/api/task/add", {
                     method: "POST",
@@ -718,10 +818,20 @@
                 const result = await res.json();
                 if (result.code !== 0) throw new Error(result.message || "添加任务失败");
 
-                showToast(`🚀 已添加下载任务：${q.desc}`);
+                showToast(`🚀 已添加下载任务：${payload.QualityLabel || '视频'}`);
                 refreshTasks();
             } catch (e) {
                 alert("提交任务失败: " + e.message);
+            }
+        }
+
+        async function removeTask(aid) {
+            try {
+                await fetch(`/api/task/remove?aid=${encodeURIComponent(aid)}`);
+                refreshTasks();
+                showToast("已移除任务记录");
+            } catch (e) {
+                console.error(e);
             }
         }
 
@@ -813,8 +923,8 @@
                 html += `
                 <div class="bg-white/80 p-3.5 rounded-xl border border-slate-100 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div class="flex items-center gap-3 truncate max-w-xl">
-                        <div class="w-8 h-8 rounded-lg ${t.IsSuccessful ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'} flex items-center justify-center text-xs flex-shrink-0">
-                            <i class="fa-solid ${t.IsSuccessful ? 'fa-check' : 'fa-xmark'}"></i>
+                        <div class="w-8 h-8 rounded-lg ${t.IsSuccessful && !t.IsFailed ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'} flex items-center justify-center text-xs flex-shrink-0">
+                            <i class="fa-solid ${t.IsSuccessful && !t.IsFailed ? 'fa-check' : 'fa-xmark'}"></i>
                         </div>
                         <div class="flex flex-col truncate">
                             <span class="text-sm font-semibold text-slate-800 truncate" title="${nameDisplay}">${nameDisplay}</span>
@@ -828,9 +938,12 @@
                         <button onclick="openDownloadFolder()" class="text-xs text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-medium">
                             <i class="fa-regular fa-folder-open"></i> <span>打开目录</span>
                         </button>
-                        <span class="text-xs px-2.5 py-1 rounded-full font-medium ${t.IsSuccessful ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}">
-                            ${t.IsSuccessful ? '已完成' : '失败'}
+                        <span class="text-xs px-2.5 py-1 rounded-full font-medium ${t.IsSuccessful && !t.IsFailed ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}">
+                            ${t.StatusText || (t.IsSuccessful ? '已完成' : '失败')}
                         </span>
+                        <button onclick="removeTask('${t.Aid}')" title="删除记录" class="text-xs text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 transition">
+                            <i class="fa-regular fa-trash-can"></i>
+                        </button>
                     </div>
                 </div>`;
             });

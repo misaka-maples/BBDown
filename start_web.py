@@ -24,6 +24,8 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(CURRENT_DIR, "web")
 DEFAULT_DOWNLOAD_DIR = os.path.expanduser("~/Downloads")
 
+DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
 # 寻找 BBDown.data 存放路径
 BBDOWN_DATA_PATHS = [
     os.path.join(os.path.expanduser("~/.local/bin"), "BBDown.data"),
@@ -79,7 +81,7 @@ def fetch_qualities(bvid, cid, duration, cookie=""):
     try:
         play_url = f"https://api.bilibili.com/x/player/playurl?bvid={bvid}&cid={cid}&qn=127&fnval=4048&fourk=1"
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": DEFAULT_UA,
             "Referer": "https://www.bilibili.com"
         }
         if cookie:
@@ -161,12 +163,14 @@ def fetch_qualities(bvid, cid, duration, cookie=""):
         ]
 
 def parse_bili_url(raw_url):
-    req = urllib.request.Request(raw_url, headers={"User-Agent": "curl/8.5.0"})
-    try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            final_url = resp.geturl()
-    except Exception:
-        final_url = raw_url
+    final_url = raw_url
+    if raw_url.startswith("http://") or raw_url.startswith("https://"):
+        try:
+            req = urllib.request.Request(raw_url, headers={"User-Agent": DEFAULT_UA})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                final_url = resp.geturl()
+        except Exception:
+            final_url = raw_url
 
     match = re.search(r"BV[0-9A-Za-z]{10}", final_url)
     aid_match = re.search(r"av(\d+)", final_url, re.IGNORECASE)
@@ -180,7 +184,7 @@ def parse_bili_url(raw_url):
 
     api_url = f"https://api.bilibili.com/x/web-interface/view?{param}"
     cookie = get_saved_cookie()
-    headers = {"User-Agent": "curl/8.5.0"}
+    headers = {"User-Agent": DEFAULT_UA}
     if cookie:
         headers["Cookie"] = cookie
 
@@ -212,7 +216,7 @@ def get_user_info(cookie_str=None):
 
     api_url = "https://api.bilibili.com/x/web-interface/nav"
     headers = {
-        "User-Agent": "curl/8.5.0",
+        "User-Agent": DEFAULT_UA,
         "Cookie": cookie_str
     }
     req = urllib.request.Request(api_url, headers=headers)
@@ -361,7 +365,7 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                 return
             try:
                 img_req = urllib.request.Request(img_url, headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "User-Agent": DEFAULT_UA,
                     "Referer": "https://www.bilibili.com/"
                 })
                 with urllib.request.urlopen(img_req, timeout=6) as img_resp:
@@ -400,7 +404,7 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         if path == "/api/login/qrcode":
             gen_url = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate?source=main-fe-header"
             try:
-                req = urllib.request.Request(gen_url, headers={"User-Agent": "Mozilla/5.0"})
+                req = urllib.request.Request(gen_url, headers={"User-Agent": DEFAULT_UA})
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     return self.send_json(200, data)
@@ -418,7 +422,7 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                 cj = http.cookiejar.CookieJar()
                 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
                 poll_url = f"https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key={qrcode_key}&source=main-fe-header"
-                req = urllib.request.Request(poll_url, headers={"User-Agent": "Mozilla/5.0"})
+                req = urllib.request.Request(poll_url, headers={"User-Agent": DEFAULT_UA})
                 resp = opener.open(req, timeout=6)
                 body = json.loads(resp.read().decode("utf-8"))
 
@@ -622,6 +626,7 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                             print(f"[*] 覆盖重新下载：已移除旧文件 {existing['path']}", flush=True)
                         except Exception as rm_err:
                             print(f"[!] 移除旧文件失败: {rm_err}", flush=True)
+                    REGISTERED_TASKS[:] = [m for m in REGISTERED_TASKS if m.get("url") != req_data.get("Url")]
                 elif conflict_mode == "rename":
                     clean_title = re.sub(r'[\\/:*?"<>|]', '_', title).strip()
                     counter = 1
@@ -635,6 +640,14 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                     else:
                         file_pattern = f"{file_pattern} ({counter})"
                     dfn_tag = f"{dfn_tag} ({counter})"
+
+                # 清理 BBDown 服务中可能残留的相同 Aid 历史已完成记录，保证重新下载正常刷新
+                aid = req_data.get("Aid")
+                if aid:
+                    try:
+                        urllib.request.urlopen(f"http://127.0.0.1:{SERVER_PORT}/remove-finished/{aid}", timeout=2)
+                    except Exception:
+                        pass
 
                 # 记录任务元数据，便于任务列表精确显示各清晰度与对应文件
                 task_meta = {
