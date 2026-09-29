@@ -191,8 +191,8 @@
             <span class="flex items-center gap-1"><i class="fa-solid fa-crown text-pink-500"></i> 大会员 4K/原画</span>
         </div>
 
-        <!-- 个人独立保存路径指示栏 -->
-        <div class="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 w-full px-4 py-2.5 bg-blue-50/80 border border-blue-100 rounded-xl text-xs text-slate-600">
+        <!-- 个人独立保存路径指示栏 (PC本地环境) -->
+        <div id="storageBannerDesktop" class="mt-4 hidden flex-col sm:flex-row sm:items-center justify-between gap-2 w-full px-4 py-2.5 bg-blue-50/80 border border-blue-100 rounded-xl text-xs text-slate-600">
             <span class="flex items-center gap-1.5 font-medium truncate">
                 <i class="fa-regular fa-folder-open text-blue-600 text-sm"></i>
                 <span class="shrink-0">当前个人下载路径：</span>
@@ -204,8 +204,29 @@
                     <span>打开主机目录</span>
                 </button>
                 <button onclick="toggleSettingsModal()" class="text-slate-500 hover:text-slate-700 font-medium flex items-center gap-1 transition whitespace-nowrap ml-2">
-                    <i class="fa-solid fa-pen-to-square"></i>
-                    <span>配置</span>
+                    <i class="fa-solid fa-gear"></i>
+                    <span>偏好设置</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 手机端 & 远程设备直存提示栏 (消除混淆的服务器路径，指引用户直接存入手机相册/文件) -->
+        <div id="storageBannerMobile" class="mt-4 hidden flex-col sm:flex-row sm:items-center justify-between gap-2 w-full px-4 py-2.5 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200/80 rounded-xl text-xs text-emerald-800 shadow-sm">
+            <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-sm shadow-emerald-500/30">
+                    <i class="fa-solid fa-mobile-screen text-xs"></i>
+                </div>
+                <div class="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2">
+                    <span class="font-bold text-emerald-900">📱 手机直存模式</span>
+                    <span class="text-emerald-700 text-[11px] sm:text-xs">
+                        视频解析下载完成后，点击任务列表的 <span class="bg-emerald-600 text-white px-1.5 py-0.5 rounded font-semibold text-[10px] sm:text-[11px]"><i class="fa-solid fa-download"></i> 存至手机</span> 即可直接保存到本地相册或文件
+                    </span>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 self-end sm:self-center shrink-0">
+                <button onclick="toggleSettingsModal()" class="text-emerald-700 hover:text-emerald-900 font-medium flex items-center gap-1 transition whitespace-nowrap">
+                    <i class="fa-solid fa-sliders"></i>
+                    <span>偏好设置</span>
                 </button>
             </div>
         </div>
@@ -434,9 +455,9 @@
             </div>
             <div class="space-y-4 mt-4">
                 <div>
-                    <label class="text-xs font-semibold text-slate-600 mb-1 block">个人专属保存路径</label>
+                    <label id="settingSaveDirLabel" class="text-xs font-semibold text-slate-600 mb-1 block">个人专属保存路径</label>
                     <input id="settingSaveDir" type="text" placeholder="未登录" class="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500 font-mono">
-                    <span class="text-[11px] text-slate-400 mt-1 block">普通用户仅允许在其专属目录内自定义子文件夹路径。</span>
+                    <span id="settingSaveDirHint" class="text-[11px] text-slate-400 mt-1 block">普通用户仅允许在其专属目录内自定义子文件夹路径。</span>
                 </div>
                 <div>
                     <label class="text-xs font-semibold text-slate-600 mb-1 block">手动填入 B 站 SESSDATA (扫码登录将自动填入)</label>
@@ -538,6 +559,15 @@
         function isLocalhost() {
             const h = window.location.hostname;
             return h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' || h === '::1';
+        }
+
+        function isMobileDevice() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent)
+                || (window.innerWidth <= 768 && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
+        }
+
+        function isLocalDesktop() {
+            return isLocalhost() && !isMobileDevice();
         }
 
         // 统一网络请求封装 (自动携带 Bearer Token 与 401 拦截)
@@ -732,9 +762,26 @@
             const displaySaveDir = document.getElementById("displaySaveDir");
             const openFolderBtn = document.getElementById("openFolderBtn");
 
+            // 判断环境切换显示 PC本地保存路径条 vs 移动端直存提示条
+            const bannerDesktop = document.getElementById("storageBannerDesktop");
+            const bannerMobile = document.getElementById("storageBannerMobile");
+            if (bannerDesktop && bannerMobile) {
+                if (isLocalDesktop()) {
+                    bannerDesktop.classList.remove("hidden");
+                    bannerDesktop.classList.add("flex");
+                    bannerMobile.classList.add("hidden");
+                    bannerMobile.classList.remove("flex");
+                } else {
+                    bannerDesktop.classList.add("hidden");
+                    bannerDesktop.classList.remove("flex");
+                    bannerMobile.classList.remove("hidden");
+                    bannerMobile.classList.add("flex");
+                }
+            }
+
             // 判断环境隐藏或显示 "打开主机目录"
             if (openFolderBtn) {
-                if (isLocalhost()) {
+                if (isLocalDesktop()) {
                     openFolderBtn.classList.remove("hidden");
                 } else {
                     openFolderBtn.classList.add("hidden");
@@ -747,9 +794,21 @@
                 navUserPill.classList.remove("hidden");
                 navSystemName.innerText = window.currentSystemUser.username;
                 dropdownUsername.innerText = `系统账号: ${window.currentSystemUser.username}`;
-                dropdownSaveDir.innerText = `目录: ${window.currentSystemUser.save_dir}`;
-                dropdownSaveDir.title = window.currentSystemUser.save_dir;
-                displaySaveDir.innerText = window.currentSystemUser.save_dir;
+
+                if (isLocalDesktop()) {
+                    dropdownSaveDir.innerText = `目录: ${window.currentSystemUser.save_dir}`;
+                    dropdownSaveDir.title = window.currentSystemUser.save_dir;
+                } else if (isMobileDevice()) {
+                    dropdownSaveDir.innerText = `存储: 📱 手机直存模式 (存至本地相册/文件)`;
+                    dropdownSaveDir.title = "视频下载混流完成后，在任务列表点击【存至手机】直接保存到本地";
+                } else {
+                    dropdownSaveDir.innerText = `存储: 🌐 远程下载模式 (浏览器直存)`;
+                    dropdownSaveDir.title = "视频下载混流完成后，在任务列表点击【下载到本地】直接保存到本机";
+                }
+
+                if (displaySaveDir) {
+                    displaySaveDir.innerText = window.currentSystemUser.save_dir;
+                }
 
                 const bili = window.currentBiliUser;
                 if (bili && bili.is_login) {
@@ -779,7 +838,7 @@
             } else {
                 if (navAuthBtns) navAuthBtns.classList.remove("hidden");
                 navUserPill.classList.add("hidden");
-                displaySaveDir.innerText = "未登录 (可点击右上角扫码登录)";
+                if (displaySaveDir) displaySaveDir.innerText = "未登录 (可点击右上角扫码登录)";
             }
         }
 
@@ -929,6 +988,10 @@
         }
 
         async function openDownloadFolder(targetDir) {
+            if (!isLocalDesktop()) {
+                showToast("📱 移动端与远程访问模式下，请直接在任务列表点击【存至手机】或【播放】");
+                return;
+            }
             const s = getSettings();
             const dir = targetDir || s.saveDir;
             try {
@@ -982,7 +1045,23 @@
             const modal = document.getElementById("settingsModal");
             modal.classList.toggle("hidden");
             const s = getSettings();
-            document.getElementById("settingSaveDir").value = s.saveDir;
+            const saveDirInput = document.getElementById("settingSaveDir");
+            const saveDirLabel = document.getElementById("settingSaveDirLabel");
+            const saveDirHint = document.getElementById("settingSaveDirHint");
+
+            saveDirInput.value = s.saveDir;
+            if (!isLocalDesktop()) {
+                if (saveDirLabel) saveDirLabel.innerText = "服务端暂存目录 (云端混流缓存)";
+                if (saveDirHint) saveDirHint.innerText = "💡 手机端与远程访问无需修改此路径。视频在服务端混流完成后，在任务列表点击【存至手机】即可直接下载到手机本地。";
+                saveDirInput.disabled = true;
+                saveDirInput.classList.add("opacity-60", "cursor-not-allowed");
+            } else {
+                if (saveDirLabel) saveDirLabel.innerText = "个人专属保存路径";
+                if (saveDirHint) saveDirHint.innerText = "普通用户仅允许在其专属目录内自定义子文件夹路径。";
+                saveDirInput.disabled = false;
+                saveDirInput.classList.remove("opacity-60", "cursor-not-allowed");
+            }
+
             document.getElementById("settingTvMode").checked = s.tvMode;
             document.getElementById("settingAddDfn").checked = s.addDfn;
         }
@@ -1307,7 +1386,9 @@
                 // 带有 token 凭据的移动端与流式 URL
                 const dlUrl = `${t.DownloadUrl}&token=${encodeURIComponent(token)}`;
                 const stUrl = `${t.StreamUrl}&token=${encodeURIComponent(token)}`;
-                const isLocal = isLocalhost();
+                const isLocal = isLocalDesktop();
+                const isMobile = isMobileDevice();
+                const dlText = isMobile ? "存至手机" : "下载到本地";
 
                 // 操作按钮组
                 let actionButtons = "";
@@ -1317,9 +1398,9 @@
                             <i class="fa-solid fa-play text-[10px]"></i>
                             <span>播放</span>
                         </button>
-                        <a href="${dlUrl}" download="${escapeHtml(t.ActualFileName)}" class="text-xs bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-500/20 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-medium active:scale-95">
+                        <a href="${dlUrl}" download="${escapeHtml(t.ActualFileName)}" class="text-xs ${isMobile ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/20'} text-white shadow-sm px-2.5 py-1.5 rounded-lg transition flex items-center gap-1.5 font-medium active:scale-95">
                             <i class="fa-solid fa-download text-[10px]"></i>
-                            <span>存至手机 / 下载</span>
+                            <span>${dlText}</span>
                         </a>
                     `;
                 }
@@ -1367,6 +1448,7 @@
 
         // ==================== 初始化 ====================
         (async function init() {
+            updateUserUI();
             await checkUserStatus();
             if (window.currentSystemUser) {
                 refreshTasks();

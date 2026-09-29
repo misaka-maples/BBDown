@@ -743,8 +743,10 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             }
             return self.send_json(200, info)
 
-        # 8. 打开本地保存目录 (仅限本地环境)
+        # 8. 打开本地保存目录 (仅限服务器本机环境)
         if path == "/api/open-folder":
+            if self.client_address[0] not in ("127.0.0.1", "::1", "localhost"):
+                return self.send_json(403, {"code": 403, "message": "移动端与远程访问模式不支持直接打开服务器目录，请在任务列表中点击【存至手机】直接保存"})
             user = self.get_current_user(query)
             user_work_dir = get_user_work_dir(user) if user else DEFAULT_DOWNLOAD_DIR
             target_dir = query.get("dir", [""])[0].strip() or user_work_dir
