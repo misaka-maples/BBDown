@@ -809,9 +809,18 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         if path == "/api/info":
             user = self.get_current_user(query)
             user_dir = get_user_work_dir(user) if user else DEFAULT_DOWNLOAD_DIR
+            public_url = ""
+            pub_file = os.path.join(CURRENT_DIR, "public_url.txt")
+            if os.path.exists(pub_file):
+                try:
+                    with open(pub_file, "r", encoding="utf-8") as pf:
+                        public_url = pf.read().strip()
+                except Exception:
+                    pass
             return self.send_json(200, {
                 "default_download_dir": user_dir,
-                "server_port": SERVER_PORT
+                "server_port": SERVER_PORT,
+                "public_url": public_url
             })
 
         # 4.1 访客临时缓存统计与手动清理接口 (仅对 clients 缓存有效)
