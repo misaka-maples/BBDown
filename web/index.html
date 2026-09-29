@@ -72,11 +72,17 @@
         
         <!-- 用户登录态 & 工具栏 -->
         <div class="flex items-center gap-2 sm:gap-3">
-            <!-- 未登录系统账号按钮 -->
-            <button id="navAuthBtn" onclick="openAuthModal('login')" class="flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-semibold px-3.5 sm:px-4 py-2 rounded-full shadow-md shadow-blue-500/20 transition active:scale-95">
-                <i class="fa-solid fa-user-lock"></i>
-                <span>登录 / 注册</span>
-            </button>
+            <!-- 未登录系统账号按钮组 -->
+            <div id="navAuthBtns" class="flex items-center gap-1.5 sm:gap-2">
+                <button onclick="openLoginModal()" class="flex items-center gap-1.5 bg-gradient-to-r from-bili to-blue-600 hover:from-sky-500 hover:to-blue-700 text-white text-xs sm:text-sm font-semibold px-3 sm:px-4 py-2 rounded-full shadow-md shadow-blue-500/20 transition active:scale-95">
+                    <i class="fa-solid fa-qrcode"></i>
+                    <span>扫码登录</span>
+                </button>
+                <button onclick="openAuthModal('login')" class="flex items-center gap-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 text-xs sm:text-sm font-semibold px-2.5 sm:px-3 py-2 rounded-full shadow-sm transition active:scale-95">
+                    <i class="fa-solid fa-key"></i>
+                    <span class="hidden sm:inline">账号密码</span>
+                </button>
+            </div>
 
             <!-- 已登录系统账号胶囊与下拉菜单 -->
             <div id="navUserPill" class="hidden relative">
@@ -735,8 +741,9 @@
                 }
             }
 
+            const navAuthBtns = document.getElementById("navAuthBtns");
             if (window.currentSystemUser) {
-                navAuthBtn.classList.add("hidden");
+                if (navAuthBtns) navAuthBtns.classList.add("hidden");
                 navUserPill.classList.remove("hidden");
                 navSystemName.innerText = window.currentSystemUser.username;
                 dropdownUsername.innerText = `系统账号: ${window.currentSystemUser.username}`;
@@ -770,20 +777,16 @@
                     biliLogoutActionBtn.classList.add("hidden");
                 }
             } else {
-                navAuthBtn.classList.remove("hidden");
+                if (navAuthBtns) navAuthBtns.classList.remove("hidden");
                 navUserPill.classList.add("hidden");
-                displaySaveDir.innerText = "请先登录";
+                displaySaveDir.innerText = "未登录 (可点击右上角扫码登录)";
             }
         }
 
-        // ==================== B 站扫码绑定 ====================
+        // ==================== B 站扫码绑定 / 一键登录 ====================
 
         function openLoginModal() {
             closeUserDropdown();
-            if (!window.currentSystemUser) {
-                openAuthModal('login');
-                return;
-            }
             document.getElementById("loginModal").classList.remove("hidden");
             refreshLoginQRCode();
         }
@@ -843,15 +846,26 @@
                 const statusText = document.getElementById("loginStatusText");
 
                 if (data.code === 0) {
+                    if (data.token) {
+                        setToken(data.token);
+                    }
+                    if (data.system_user) {
+                        window.currentSystemUser = data.system_user;
+                    }
+                    if (data.user) {
+                        window.currentBiliUser = data.user;
+                    }
                     clearInterval(qrPollTimer);
                     qrPollTimer = null;
-                    statusText.innerText = "🎉 绑定成功！正在刷新用户状态...";
+                    statusText.innerText = `🎉 登录成功！欢迎，${(data.user && data.user.uname) || '用户'}`;
                     document.getElementById("loginStatusBadge").className = "mt-4 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 flex items-center gap-2";
                     
-                    setTimeout(() => {
+                    setTimeout(async () => {
                         closeLoginModal();
-                        checkUserStatus();
-                    }, 1200);
+                        await checkUserStatus();
+                        refreshTasks();
+                        showToast(`🎉 欢迎，${(data.user && data.user.uname) || '用户'}！`);
+                    }, 1000);
                 } else if (data.code === 86090) {
                     statusText.innerText = "📱 扫码成功，请在手机上确认...";
                 } else if (data.code === 86038) {
@@ -1356,9 +1370,6 @@
             await checkUserStatus();
             if (window.currentSystemUser) {
                 refreshTasks();
-            } else {
-                // 如果尚未登录，弹出登录弹窗方便首次使用
-                openAuthModal('login');
             }
             setInterval(refreshTasks, 3000);
         })();

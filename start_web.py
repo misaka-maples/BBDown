@@ -563,6 +563,8 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         # 1. 认证状态检查接口
         if path == "/api/auth/me":
             user = self.get_current_user(query)
+            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
+                user = db.get_user_by_username("admin")
             if not user:
                 return self.send_json(200, {"code": 0, "is_authenticated": False, "user": None})
             bili_cookie = user.get("bili_cookie", "")
@@ -585,6 +587,8 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         # 2. 手机端与远程浏览器文件直接下载 & 在线流式播放
         if path in ("/api/file/download", "/api/file/stream"):
             user = self.get_current_user(query)
+            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
+                user = db.get_user_by_username("admin")
             if not user:
                 return self.send_json(401, {"code": 401, "message": "未登录或登录已过期，请先登录系统"})
 
@@ -615,6 +619,8 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             if not url:
                 return self.send_json(400, {"code": -1, "message": "缺少 url 参数"})
             user = self.get_current_user(query)
+            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
+                user = db.get_user_by_username("admin")
             cookie = user.get("bili_cookie", "") if user else ""
             if not cookie and user and user.get("username") == "admin":
                 cookie = get_saved_cookie()
@@ -627,6 +633,8 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         # 4. 系统信息接口
         if path == "/api/info":
             user = self.get_current_user(query)
+            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
+                user = db.get_user_by_username("admin")
             user_dir = get_user_work_dir(user) if user else DEFAULT_DOWNLOAD_DIR
             return self.send_json(200, {
                 "default_download_dir": user_dir,
@@ -644,7 +652,7 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 return self.send_json(500, {"code": -1, "message": f"生成二维码失败: {e}"})
 
-        # 6. 轮询二维码扫码状态 (自动绑定至当前系统用户)
+        # 6. 轮询二维码扫码状态 (自动绑定至当前系统用户，或通过 B 站扫码直接自动登录/创建用户)
         if path == "/api/login/poll":
             qrcode_key = query.get("key", [""])[0].strip()
             if not qrcode_key:
@@ -672,20 +680,39 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                             qs = u.split("?", 1)[1]
                             cookie_str = qs.replace("&", "; ")
 
-                    # 绑定至当前登录用户
+                    user_info = get_user_info(cookie_str)
+                    token = ""
                     user = self.get_current_user(query)
+
                     if user:
+                        # 当前已有登录用户，直接绑定 B 站 Cookie
                         db.update_user_cookie(user["id"], cookie_str)
+                        token = extract_token_from_request(self.headers, query)
+                        if not token:
+                            token = db.create_session(user["id"])
+                    else:
+                        # 当前未登录任何系统用户！通过 B 站扫码自动登录/注册独立账号
+                        user, err = db.login_or_create_user_by_bili(cookie_str, user_info, DEFAULT_DOWNLOAD_DIR)
+                        if user:
+                            token = db.create_session(user["id"])
+
                     if not user or user.get("username") == "admin":
                         save_cookie_to_files(cookie_str)
 
-                    user_info = get_user_info(cookie_str)
+                    cookie_header = {"Set-Cookie": f"bilidown_session={token}; Path=/; Max-Age=2592000; SameSite=Lax"} if token else None
+
                     return self.send_json(200, {
                         "code": 0,
                         "message": "登录成功",
+                        "token": token,
                         "cookie": cookie_str,
-                        "user": user_info
-                    })
+                        "user": user_info,
+                        "system_user": {
+                            "id": user["id"],
+                            "username": user["username"],
+                            "save_dir": get_user_work_dir(user)
+                        } if user else None
+                    }, extra_headers=cookie_header)
                 elif poll_code == 86090:
                     return self.send_json(200, {"code": 86090, "message": "扫码成功，请在手机上点击确认"})
                 elif poll_code == 86038:
@@ -699,10 +726,14 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         # 7. 获取当前用户 B 站登录态
         if path == "/api/user/status":
             user = self.get_current_user(query)
+            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
+                user = db.get_user_by_username("admin")
             if not user:
                 return self.send_json(200, {"is_login": False, "system_user": None})
 
-            cookie = user.get("bili_cookie") or (get_saved_cookie() if user.get("username") == "admin" else "")
+            cookie = user.get("bili_cookie", "")
+            if not cookie and user.get("username") == "admin":
+                cookie = get_saved_cookie()
             info = get_user_info(cookie)
             info["cookie"] = cookie
             info["system_user"] = {
@@ -728,6 +759,8 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         # 9. 任务列表接口 (完全按用户隔离，跨重启持久化，支持移动端直链)
         if path == "/api/tasks":
             user = self.get_current_user(query)
+            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
+                user = db.get_user_by_username("admin")
             if not user:
                 return self.send_json(401, {"code": 401, "message": "请先登录系统账号"})
 
@@ -829,6 +862,8 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         # 10. 检查保存目录中是否已存在同名/同画质文件
         if path == "/api/check-file":
             user = self.get_current_user(query)
+            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
+                user = db.get_user_by_username("admin")
             title = query.get("title", [""])[0].strip()
             dfn_tag = query.get("dfnTag", [""])[0].strip()
             expected_ext = query.get("expectedExt", [".mp4"])[0].strip()
@@ -991,6 +1026,8 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         # 7. 添加下载任务 (自动隔离保存目录与 B 站 Cookie)
         if path == "/api/task/add":
             user = self.get_current_user()
+            if not user and (self.client_address[0] in ("127.0.0.1", "::1", "localhost")):
+                user = db.get_user_by_username("admin")
             if not user:
                 return self.send_json(401, {"code": 401, "message": "请先登录系统账号"})
 

@@ -142,6 +142,54 @@ def authenticate_user(username, password):
     user_dict.pop("salt", None)
     return user_dict, None
 
+def get_user_by_username(username):
+    if not username:
+        return None
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, username, bili_cookie, custom_save_dir, created_at FROM users WHERE username = ?", (username.strip(),))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def login_or_create_user_by_bili(cookie_str, user_info, default_download_dir):
+    uname = (user_info.get("uname") or "").strip()
+    mid = str(user_info.get("mid") or "")
+    if not uname:
+        uname = f"bili_{mid}" if mid else "bili_user"
+
+    safe_uname = re.sub(r'[\\/:*?"<>|]', '_', uname).strip()
+    if not safe_uname:
+        safe_uname = f"bili_{mid}" if mid else "bili_user"
+
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        c.execute("SELECT * FROM users WHERE username = ?", (safe_uname,))
+        row = c.fetchone()
+        if row:
+            user_id = row["id"]
+            c.execute("UPDATE users SET bili_cookie = ? WHERE id = ?", (cookie_str or "", user_id))
+            conn.commit()
+            return get_user_by_id(user_id), None
+        else:
+            salt = secrets.token_hex(16)
+            pwd_hash = hash_password(secrets.token_hex(16), salt)
+            user_dir = os.path.join(default_download_dir, "users", safe_uname)
+            os.makedirs(user_dir, exist_ok=True)
+            c.execute("""
+            INSERT INTO users (username, password_hash, salt, bili_cookie, custom_save_dir, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """, (safe_uname, pwd_hash, salt, cookie_str or "", user_dir, time.time()))
+            user_id = c.lastrowid
+            conn.commit()
+            return get_user_by_id(user_id), None
+    except Exception as e:
+        return None, str(e)
+    finally:
+        conn.close()
+
+
 def create_session(user_id):
     token = secrets.token_hex(32)
     now = time.time()
