@@ -378,3 +378,7 @@ debug_*.json
 *.m4s
 *.aria2
 BBDown.data
+data/
+*.db
+
+

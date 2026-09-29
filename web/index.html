@@ -2,12 +2,12 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="referrer" content="no-referrer">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>BiliDown - 哔哩哔哩视频在线解析下载</title>
+    <title>BiliDown - 哔哩哔哩视频在线解析下载 (多用户版)</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -39,114 +39,167 @@
             -webkit-text-fill-color: transparent;
         }
         .glass-card {
-            background: rgba(255, 255, 255, 0.88);
+            background: rgba(255, 255, 255, 0.92);
             backdrop-filter: blur(16px);
-            border: 1px solid rgba(226, 232, 240, 0.8);
+            border: 1px solid rgba(226, 232, 240, 0.85);
         }
         #qrcodeCanvas img {
             margin: auto;
             border-radius: 8px;
         }
+        /* 移动端轻量优化 */
+        @media (max-width: 640px) {
+            .mobile-stack {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
     </style>
 </head>
-<body class="bg-gradient-to-br from-slate-50 via-sky-50/30 to-indigo-50/40 min-h-screen text-slate-800 flex flex-col items-center">
+<body class="bg-gradient-to-br from-slate-50 via-sky-50/30 to-indigo-50/40 min-h-screen text-slate-800 flex flex-col items-center select-none sm:select-auto">
 
     <!-- 顶部导航 -->
-    <header class="w-full max-w-5xl px-6 py-5 flex justify-between items-center">
-        <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-bili to-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/30 font-bold text-xl">
+    <header class="w-full max-w-5xl px-4 sm:px-6 py-4 flex justify-between items-center relative z-30">
+        <div class="flex items-center gap-2.5 sm:gap-3">
+            <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-bili to-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/30 font-bold text-lg sm:text-xl">
                 <i class="fa-solid fa-play"></i>
             </div>
             <div>
-                <span class="text-xl font-bold tracking-tight text-slate-900">BiliDown</span>
-                <span class="ml-1.5 text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">Web UI</span>
+                <span class="text-lg sm:text-xl font-bold tracking-tight text-slate-900">BiliDown</span>
+                <span class="ml-1 text-[11px] sm:text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">Cloud</span>
             </div>
         </div>
         
         <!-- 用户登录态 & 工具栏 -->
-        <div class="flex items-center gap-3">
-            <!-- 未登录按钮 -->
-            <button id="navLoginBtn" onclick="openLoginModal()" class="flex items-center gap-2 bg-gradient-to-r from-bili to-blue-600 hover:from-sky-500 hover:to-blue-700 text-white text-xs sm:text-sm font-semibold px-4 py-2 rounded-full shadow-md shadow-blue-500/20 transition">
-                <i class="fa-solid fa-qrcode"></i>
-                <span>扫码登录</span>
+        <div class="flex items-center gap-2 sm:gap-3">
+            <!-- 未登录系统账号按钮 -->
+            <button id="navAuthBtn" onclick="openAuthModal('login')" class="flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs sm:text-sm font-semibold px-3.5 sm:px-4 py-2 rounded-full shadow-md shadow-blue-500/20 transition active:scale-95">
+                <i class="fa-solid fa-user-lock"></i>
+                <span>登录 / 注册</span>
             </button>
 
-            <!-- 已登录卡片 -->
-            <div id="navUserCard" class="hidden flex items-center gap-2.5 bg-white/90 border border-slate-200/80 pl-2 pr-3 py-1.5 rounded-full shadow-sm">
-                <img id="navUserAvatar" src="" class="w-7 h-7 rounded-full object-cover border border-slate-200">
-                <div class="flex flex-col text-left">
-                    <div class="flex items-center gap-1.5">
-                        <span id="navUserName" class="text-xs font-bold text-slate-800 max-w-[100px] truncate"></span>
-                        <span id="navVipBadge" class="text-[10px] font-bold px-1.5 py-0.2 rounded bg-pink-100 text-pink-600">大会员</span>
+            <!-- 已登录系统账号胶囊与下拉菜单 -->
+            <div id="navUserPill" class="hidden relative">
+                <button onclick="toggleUserDropdown(event)" class="flex items-center gap-2 bg-white/95 border border-slate-200/90 pl-2 pr-3 py-1.5 rounded-full shadow-sm hover:border-blue-400 transition cursor-pointer">
+                    <img id="navBiliAvatar" src="" class="hidden w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover border border-slate-200">
+                    <div id="navDefaultAvatar" class="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">
+                        <i class="fa-regular fa-user"></i>
                     </div>
-                </div>
-                <button onclick="logout()" class="text-slate-400 hover:text-red-500 ml-1 text-xs" title="退出登录">
-                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                    <div class="flex flex-col text-left">
+                        <div class="flex items-center gap-1 sm:gap-1.5">
+                            <span id="navSystemName" class="text-xs font-bold text-slate-800 max-w-[80px] sm:max-w-[110px] truncate">用户</span>
+                            <span id="navVipBadge" class="hidden text-[10px] font-bold px-1.5 py-0.2 rounded bg-pink-100 text-pink-600">大会员</span>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-chevron-down text-[10px] text-slate-400 ml-0.5"></i>
                 </button>
+
+                <!-- 用户菜单下拉弹窗 -->
+                <div id="userDropdownMenu" class="hidden absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-2xl border border-slate-100 p-3 z-50 animate-in fade-in zoom-in-95 duration-100">
+                    <div class="px-2 py-1.5 border-b border-slate-100 mb-2">
+                        <div class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                            <i class="fa-solid fa-shield-halved text-blue-500"></i>
+                            <span id="dropdownUsername">--</span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 font-mono truncate mt-0.5" id="dropdownSaveDir" title="">
+                            目录: ...
+                        </div>
+                    </div>
+
+                    <!-- B 站账号绑定状态条目 -->
+                    <div class="px-2 py-2 rounded-xl bg-slate-50 border border-slate-100 mb-2 text-xs">
+                        <div class="flex items-center justify-between">
+                            <span class="text-slate-500 font-medium">B 站账号：</span>
+                            <span id="biliBindStatus" class="font-bold text-slate-700">未绑定</span>
+                        </div>
+                        <div class="flex items-center justify-end gap-2 mt-2 pt-1 border-t border-slate-200/60">
+                            <button id="biliLoginActionBtn" onclick="openLoginModal()" class="text-[11px] text-blue-600 font-semibold hover:underline flex items-center gap-1">
+                                <i class="fa-solid fa-qrcode"></i>
+                                <span>扫码绑定</span>
+                            </button>
+                            <button id="biliLogoutActionBtn" onclick="logoutBili()" class="hidden text-[11px] text-rose-500 font-semibold hover:underline flex items-center gap-1">
+                                <i class="fa-solid fa-link-slash"></i>
+                                <span>解绑</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <button onclick="toggleSettingsModal()" class="w-full text-left px-2.5 py-2 text-xs text-slate-700 hover:bg-slate-50 rounded-xl transition flex items-center gap-2">
+                        <i class="fa-solid fa-gear text-slate-400"></i>
+                        <span>偏好设置与自定义路径</span>
+                    </button>
+                    <button onclick="logoutSystem()" class="w-full text-left px-2.5 py-2 text-xs text-rose-600 hover:bg-rose-50 rounded-xl transition flex items-center gap-2 mt-1">
+                        <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                        <span>退出系统账号</span>
+                    </button>
+                </div>
             </div>
 
-            <button onclick="toggleSettingsModal()" class="text-slate-600 hover:text-blue-600 p-2 rounded-lg hover:bg-white/80 transition" title="下载设置">
-                <i class="fa-solid fa-gear text-lg"></i>
+            <!-- 设置齿轮 -->
+            <button onclick="toggleSettingsModal()" class="text-slate-600 hover:text-blue-600 p-2 rounded-xl hover:bg-white/80 transition" title="下载设置">
+                <i class="fa-solid fa-gear text-base sm:text-lg"></i>
             </button>
-            <a href="https://github.com/misaka-maples/BBDown" target="_blank" class="hidden sm:flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900 bg-white/80 px-3.5 py-1.5 rounded-full border border-slate-200/80 shadow-sm transition">
-                <i class="fa-brands fa-github text-base"></i>
+            <a href="https://github.com/misaka-maples/BBDown" target="_blank" class="hidden sm:flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-900 bg-white/80 px-3 py-1.5 rounded-full border border-slate-200/80 shadow-sm transition">
+                <i class="fa-brands fa-github text-sm"></i>
                 <span class="font-medium">GitHub</span>
             </a>
         </div>
     </header>
 
     <!-- 主体区域 -->
-    <main class="w-full max-w-4xl px-4 mt-8 flex flex-col items-center flex-1">
+    <main class="w-full max-w-4xl px-4 mt-4 sm:mt-8 flex flex-col items-center flex-1 pb-16">
         <!-- 标语 -->
-        <h1 class="text-3xl sm:text-5xl font-black tracking-tight text-center text-slate-900 leading-tight">
+        <h1 class="text-2xl sm:text-5xl font-black tracking-tight text-center text-slate-900 leading-tight">
             哔哩哔哩视频 <span class="gradient-text">高清解析与下载</span>
         </h1>
-        <p class="text-slate-500 mt-3 text-center text-sm sm:text-base max-w-xl">
-            支持一键提取最高 4K / 1080P60 原画视频与 Hi-Res 音频，登录大会员账号即可解锁满血画质。
+        <p class="text-slate-500 mt-2 sm:mt-3 text-center text-xs sm:text-base max-w-xl">
+            支持一键提取最高 4K / 1080P60 原画视频与 Hi-Res 音频，公网多用户独立存储，手机端即开即下。
         </p>
 
-        <!-- 类似 SnapAny 居中输入框 -->
-        <div class="w-full mt-8 glass-card p-2 sm:p-2.5 rounded-2xl shadow-xl shadow-slate-200/60 transition-all focus-within:ring-2 focus-within:ring-blue-500/30">
-            <div class="flex items-center gap-2">
-                <div class="pl-3 text-slate-400">
-                    <i class="fa-solid fa-link text-lg"></i>
+        <!-- 居中输入框 -->
+        <div class="w-full mt-6 sm:mt-8 glass-card p-2 sm:p-2.5 rounded-2xl shadow-xl shadow-slate-200/60 transition-all focus-within:ring-2 focus-within:ring-blue-500/30">
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div class="flex items-center flex-1">
+                    <div class="pl-2 sm:pl-3 text-slate-400">
+                        <i class="fa-solid fa-link text-base sm:text-lg"></i>
+                    </div>
+                    <input id="urlInput" type="text" 
+                        placeholder="粘贴 B 站链接，例如 https://www.bilibili.com/video/BV1... 或 b23.tv" 
+                        class="w-full py-2.5 sm:py-3 px-2 bg-transparent text-slate-800 placeholder-slate-400 outline-none text-sm sm:text-base font-normal">
+                    <button onclick="pasteClipboard()" class="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition mr-1" title="粘贴剪贴板">
+                        <i class="fa-regular fa-paste"></i>
+                        <span class="hidden sm:inline">粘贴</span>
+                    </button>
                 </div>
-                <input id="urlInput" type="text" 
-                    placeholder="粘贴 B 站视频链接，例如 https://www.bilibili.com/video/BV1... 或 b23.tv 短链" 
-                    class="w-full py-3 px-2 bg-transparent text-slate-800 placeholder-slate-400 outline-none text-base font-normal">
-                <button onclick="pasteClipboard()" class="hidden sm:flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition" title="粘贴剪贴板">
-                    <i class="fa-regular fa-paste"></i>
-                    <span>粘贴</span>
-                </button>
-                <button id="parseBtn" onclick="parseVideo()" class="bg-gradient-to-r from-bili to-blue-600 hover:from-sky-500 hover:to-blue-700 text-white font-semibold px-6 py-3 rounded-xl shadow-md shadow-blue-500/20 transition-all flex items-center gap-2 whitespace-nowrap">
+                <button id="parseBtn" onclick="parseVideo()" class="bg-gradient-to-r from-bili to-blue-600 hover:from-sky-500 hover:to-blue-700 text-white font-semibold px-5 py-2.5 sm:py-3 rounded-xl shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 whitespace-nowrap active:scale-98">
                     <span id="btnText">解析视频</span>
-                    <i id="btnIcon" class="fa-solid fa-arrow-right text-sm"></i>
+                    <i id="btnIcon" class="fa-solid fa-arrow-right text-xs sm:text-sm"></i>
                 </button>
             </div>
         </div>
 
         <!-- 快捷选项提示 -->
-        <div class="flex items-center justify-center gap-4 mt-3 text-xs text-slate-500">
-            <span class="flex items-center gap-1"><i class="fa-solid fa-bolt text-amber-500"></i> TV 接口免 412 风控</span>
-            <span class="flex items-center gap-1"><i class="fa-solid fa-film text-blue-500"></i> 自动混流 MP4</span>
-            <span class="flex items-center gap-1"><i class="fa-solid fa-crown text-pink-500"></i> 支持大会员 4K/原画</span>
+        <div class="flex flex-wrap items-center justify-center gap-3 sm:gap-4 mt-3 text-[11px] sm:text-xs text-slate-500">
+            <span class="flex items-center gap-1"><i class="fa-solid fa-user-shield text-indigo-500"></i> 多账号独立隔离</span>
+            <span class="flex items-center gap-1"><i class="fa-solid fa-mobile-screen text-emerald-500"></i> 手机端直接存盘</span>
+            <span class="flex items-center gap-1"><i class="fa-solid fa-crown text-pink-500"></i> 大会员 4K/原画</span>
         </div>
 
-        <!-- 默认保存路径指示栏 -->
+        <!-- 个人独立保存路径指示栏 -->
         <div class="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 w-full px-4 py-2.5 bg-blue-50/80 border border-blue-100 rounded-xl text-xs text-slate-600">
             <span class="flex items-center gap-1.5 font-medium truncate">
                 <i class="fa-regular fa-folder-open text-blue-600 text-sm"></i>
-                <span>默认下载保存路径：</span>
-                <span id="displaySaveDir" class="font-mono text-blue-700 bg-white px-2 py-0.5 rounded border border-blue-200">/home/maple/Downloads</span>
+                <span class="shrink-0">当前个人下载路径：</span>
+                <span id="displaySaveDir" class="font-mono text-blue-700 bg-white px-2 py-0.5 rounded border border-blue-200 truncate">未登录</span>
             </span>
-            <div class="flex items-center gap-2 self-end sm:self-center">
-                <button onclick="openDownloadFolder()" class="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 transition whitespace-nowrap">
+            <div class="flex items-center gap-2 self-end sm:self-center shrink-0">
+                <button id="openFolderBtn" onclick="openDownloadFolder()" class="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 transition whitespace-nowrap">
                     <i class="fa-regular fa-folder-open"></i>
-                    <span>打开目录</span>
+                    <span>打开主机目录</span>
                 </button>
                 <button onclick="toggleSettingsModal()" class="text-slate-500 hover:text-slate-700 font-medium flex items-center gap-1 transition whitespace-nowrap ml-2">
                     <i class="fa-solid fa-pen-to-square"></i>
-                    <span>修改</span>
+                    <span>配置</span>
                 </button>
             </div>
         </div>
@@ -158,7 +211,7 @@
         </div>
 
         <!-- 解析结果卡片 -->
-        <div id="resultCard" class="hidden w-full mt-8 glass-card p-5 sm:p-7 rounded-2xl shadow-xl shadow-slate-200/50 flex flex-col md:flex-row gap-6">
+        <div id="resultCard" class="hidden w-full mt-6 sm:mt-8 glass-card p-4 sm:p-7 rounded-2xl shadow-xl shadow-slate-200/50 flex flex-col md:flex-row gap-5 sm:gap-6">
             <!-- 封面预览图 -->
             <div class="relative w-full md:w-72 h-44 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0 shadow-md">
                 <img id="videoCover" src="" class="w-full h-full object-cover">
@@ -168,9 +221,9 @@
             <!-- 视频详情与画质选择 -->
             <div class="flex-1 flex flex-col justify-between">
                 <div>
-                    <h2 id="videoTitle" class="text-lg sm:text-xl font-bold text-slate-900 leading-snug line-clamp-2"></h2>
-                    <div class="flex items-center gap-4 mt-2 text-xs text-slate-500">
-                        <span id="videoAuthor" class="flex items-center gap-1 text-slate-700 font-medium">
+                    <h2 id="videoTitle" class="text-base sm:text-xl font-bold text-slate-900 leading-snug line-clamp-2"></h2>
+                    <div class="flex items-center gap-3 mt-2 text-xs text-slate-500">
+                        <span id="videoAuthor" class="flex items-center gap-1 text-slate-700 font-medium truncate">
                             <i class="fa-regular fa-user text-blue-500"></i>
                             <span id="authorName"></span>
                         </span>
@@ -179,13 +232,13 @@
                 </div>
 
                 <!-- 清晰度与下载按钮 -->
-                <div class="mt-5 pt-4 border-t border-slate-100">
+                <div class="mt-4 sm:mt-5 pt-4 border-t border-slate-100">
                     <label class="text-xs font-semibold text-slate-500 block mb-2">选择下载画质：</label>
-                    <div id="qualityOptions" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 mb-4">
-                        <!-- 动态根据视频实际支持的清晰度生成 -->
+                    <div id="qualityOptions" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-4">
+                        <!-- 动态生成 -->
                     </div>
 
-                    <button onclick="submitDownloadTask()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-blue-500/20 transition flex items-center justify-center gap-2">
+                    <button onclick="submitDownloadTask()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-blue-500/20 transition flex items-center justify-center gap-2 active:scale-98">
                         <i class="fa-solid fa-cloud-arrow-down"></i>
                         <span>开始高速下载并混流</span>
                     </button>
@@ -194,16 +247,16 @@
         </div>
 
         <!-- 任务列表区域 -->
-        <div class="w-full mt-10">
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+        <div class="w-full mt-8 sm:mt-10">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
                     <i class="fa-solid fa-list-check text-blue-500"></i>
-                    <span>下载任务列表</span>
+                    <span>下载任务列表 (当前用户专属)</span>
                 </h3>
                 <div class="flex items-center gap-3">
                     <button onclick="clearTasks()" class="text-xs text-slate-400 hover:text-rose-600 flex items-center gap-1 transition" title="清空下载历史记录">
                         <i class="fa-regular fa-trash-can"></i>
-                        <span>清空记录</span>
+                        <span class="hidden sm:inline">清空记录</span>
                     </button>
                     <button onclick="refreshTasks()" class="text-xs text-slate-500 hover:text-blue-600 flex items-center gap-1 transition">
                         <i class="fa-solid fa-arrows-rotate"></i>
@@ -220,13 +273,112 @@
         </div>
     </main>
 
-    <!-- 扫码登录弹窗 -->
+    <!-- 1. 系统账号登录 / 注册弹窗 -->
+    <div id="authModal" class="hidden fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 flex flex-col">
+            <div class="flex justify-between items-center pb-3 border-b border-slate-100">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center text-sm font-bold">
+                        <i class="fa-solid fa-user-lock"></i>
+                    </div>
+                    <span class="font-bold text-slate-900 text-base" id="authModalTitle">登录系统账号</span>
+                </div>
+                <button onclick="closeAuthModal()" class="text-slate-400 hover:text-slate-600 p-1">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Tab 切换 -->
+            <div class="flex bg-slate-100 p-1 rounded-xl mt-4 mb-4">
+                <button id="authTabLogin" onclick="switchAuthTab('login')" class="flex-1 py-1.5 text-xs font-semibold rounded-lg transition bg-white text-blue-600 shadow-sm">
+                    账号登录
+                </button>
+                <button id="authTabRegister" onclick="switchAuthTab('register')" class="flex-1 py-1.5 text-xs font-semibold rounded-lg transition text-slate-500 hover:text-slate-800">
+                    快速注册
+                </button>
+            </div>
+
+            <!-- 登录表单 -->
+            <form id="loginForm" onsubmit="handleLogin(event)" class="space-y-3.5">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">用户名</label>
+                    <input id="loginUsername" type="text" required placeholder="如: admin 或您的用户名" class="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">登录密码</label>
+                    <input id="loginPassword" type="password" required placeholder="请输入密码" class="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500">
+                </div>
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs py-2.5 rounded-xl shadow-md shadow-blue-500/20 transition active:scale-98">
+                    立即登录
+                </button>
+                <p class="text-[11px] text-slate-400 text-center pt-1">
+                    💡 初始默认管理员：<code>admin</code> / <code>admin123</code>
+                </p>
+            </form>
+
+            <!-- 注册表单 -->
+            <form id="registerForm" onsubmit="handleRegister(event)" class="hidden space-y-3.5">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">新用户名</label>
+                    <input id="regUsername" type="text" required placeholder="支持字母、数字与中文 (不少于2位)" class="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">设置密码</label>
+                    <input id="regPassword" type="password" required placeholder="不少于4位字符" class="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">确认密码</label>
+                    <input id="regPasswordConfirm" type="password" required placeholder="请再次输入密码" class="w-full text-xs px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500">
+                </div>
+                <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold text-xs py-2.5 rounded-xl shadow-md shadow-blue-500/20 transition active:scale-98">
+                    注册并直接登录
+                </button>
+                <p class="text-[11px] text-slate-400 text-center leading-relaxed pt-1">
+                    🔒 注册后系统将自动为您创建独立隔离的保存目录与独立 B 站配置。
+                </p>
+            </form>
+        </div>
+    </div>
+
+    <!-- 2. 视频在线播放 / 手机预览弹窗 (支持 RFC 7233 移动端流式拖拽播放) -->
+    <div id="videoPlayerModal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-6">
+        <div class="bg-white rounded-2xl sm:rounded-3xl max-w-3xl w-full p-4 sm:p-5 shadow-2xl border border-slate-100 flex flex-col max-h-[92vh]">
+            <div class="flex justify-between items-center pb-3 border-b border-slate-100">
+                <div class="flex items-center gap-2 truncate max-w-[80%]">
+                    <i class="fa-solid fa-circle-play text-blue-600 text-lg"></i>
+                    <h4 id="playerModalTitle" class="font-bold text-slate-900 text-sm sm:text-base truncate">视频预览</h4>
+                </div>
+                <button onclick="closeVideoModal()" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="mt-3 relative w-full bg-black rounded-xl overflow-hidden flex items-center justify-center min-h-[220px]">
+                <video id="videoPlayerElem" controls playsinline preload="metadata" class="w-full max-h-[60vh] rounded-xl outline-none"></video>
+            </div>
+
+            <div class="mt-3.5 pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <span id="playerModalMeta" class="text-xs text-slate-500 font-mono">--</span>
+                <div class="flex items-center gap-2 self-end sm:self-center">
+                    <a id="playerModalDownloadBtn" href="#" download="" class="bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs px-4 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm shadow-blue-500/20">
+                        <i class="fa-solid fa-download"></i>
+                        <span>存至手机 / 下载</span>
+                    </a>
+                    <button onclick="closeVideoModal()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs px-3.5 py-2 rounded-xl transition">
+                        关闭
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. 扫码绑定 B 站弹窗 -->
     <div id="loginModal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 flex flex-col items-center text-center">
             <div class="w-full flex justify-between items-center mb-2">
                 <h4 class="font-bold text-slate-900 text-lg flex items-center gap-2">
                     <i class="fa-brands fa-bilibili text-bili"></i>
-                    <span>扫码登录 B 站</span>
+                    <span>扫码绑定 B 站账号</span>
                 </h4>
                 <button onclick="closeLoginModal()" class="text-slate-400 hover:text-slate-600 text-sm">
                     <i class="fa-solid fa-xmark text-lg"></i>
@@ -234,7 +386,7 @@
             </div>
             
             <p class="text-xs text-slate-500 mb-6">
-                使用手机 B 站 App 扫码，解锁大会员 4K 原画下载
+                使用手机 B 站 App 扫码，解锁大会员 4K/原画清晰度
             </p>
 
             <!-- 二维码展示区 -->
@@ -260,31 +412,28 @@
             </div>
 
             <p class="mt-5 text-[11px] text-slate-400 leading-relaxed">
-                🔒 登录凭证仅保存于你本地设备中（用于调用 B 站官方接口），绝不上载任何第三方服务器。
+                🔒 凭证安全存储于当前用户的个人加密档案中，绝不下发或泄露给任何其他用户。
             </p>
         </div>
     </div>
 
-    <!-- 设置弹窗 -->
+    <!-- 4. 设置弹窗 -->
     <div id="settingsModal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
             <div class="flex justify-between items-center pb-4 border-b border-slate-100">
-                <h4 class="font-bold text-slate-800 text-base">下载与解析配置</h4>
+                <h4 class="font-bold text-slate-800 text-base">下载与个人配置</h4>
                 <button onclick="toggleSettingsModal()" class="text-slate-400 hover:text-slate-600 text-sm">
                     <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
             <div class="space-y-4 mt-4">
                 <div>
-                    <label class="text-xs font-semibold text-slate-600 mb-1 block">BBDown 服务器地址</label>
-                    <input id="settingServerUrl" type="text" value="http://127.0.0.1:58682" class="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500">
+                    <label class="text-xs font-semibold text-slate-600 mb-1 block">个人专属保存路径</label>
+                    <input id="settingSaveDir" type="text" placeholder="未登录" class="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500 font-mono">
+                    <span class="text-[11px] text-slate-400 mt-1 block">普通用户仅允许在其专属目录内自定义子文件夹路径。</span>
                 </div>
                 <div>
-                    <label class="text-xs font-semibold text-slate-600 mb-1 block">保存目录</label>
-                    <input id="settingSaveDir" type="text" placeholder="/home/maple/Downloads" class="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500">
-                </div>
-                <div>
-                    <label class="text-xs font-semibold text-slate-600 mb-1 block">手动填入 SESSDATA (扫码登录后会自动保存)</label>
+                    <label class="text-xs font-semibold text-slate-600 mb-1 block">手动填入 B 站 SESSDATA (扫码登录将自动填入)</label>
                     <input id="settingCookie" type="password" placeholder="可手动填入已有的 SESSDATA" class="w-full text-xs px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-blue-500">
                 </div>
                 <div class="flex items-center justify-between pt-2">
@@ -308,7 +457,7 @@
         </div>
     </div>
 
-    <!-- 同名文件冲突处理弹窗 -->
+    <!-- 5. 同名文件冲突处理弹窗 -->
     <div id="fileConflictModal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
             <div class="flex items-center gap-3 pb-3 border-b border-slate-100">
@@ -317,7 +466,7 @@
                 </div>
                 <div>
                     <h4 class="font-bold text-slate-800 text-base">目标文件已存在</h4>
-                    <p class="text-xs text-slate-400">下载目录中已检测到相同清晰度的视频文件</p>
+                    <p class="text-xs text-slate-400">个人保存目录中已检测到相同清晰度的视频文件</p>
                 </div>
             </div>
             
@@ -334,7 +483,7 @@
 
             <p class="text-xs text-slate-500 my-4 leading-relaxed">
                 请选择如何处理本次下载：<br>
-                • <b>覆盖原文件</b>：将彻底删除旧文件并重新下载完整数据。<br>
+                • <b>覆盖原文件</b>：删除旧文件并重新下载完整数据。<br>
                 • <b>生成副本</b>：保留现有文件，将新文件命名为 <code>(1)</code>, <code>(2)</code> 继续下载。
             </p>
 
@@ -360,115 +509,281 @@
     </footer>
 
     <script>
-        window.currentUser = null;
-        let selectedQuality = "4K 超高清, 1080P 高码率, 1080P 高清";
+        window.currentSystemUser = null;
+        window.currentBiliUser = null;
+        let selectedQualityObj = null;
         let currentVideoData = null;
         let qrCodeObj = null;
         let qrPollTimer = null;
         let pendingDownloadPayload = null;
 
-        // 本地配置读取与保存
-        function getSettings() {
-            return {
-                serverUrl: localStorage.getItem("bbdown_server_url") || "http://127.0.0.1:58682",
-                saveDir: localStorage.getItem("bbdown_save_dir") || "/home/maple/Downloads",
-                cookie: localStorage.getItem("bbdown_cookie") || "",
-                tvMode: localStorage.getItem("bbdown_tv_mode") === "true",
-                addDfn: localStorage.getItem("bbdown_add_dfn") !== "false"
-            };
+        function getToken() {
+            return localStorage.getItem("bilidown_token") || "";
         }
 
-        async function openDownloadFolder() {
-            const s = getSettings();
-            try {
-                const res = await fetch(`/api/open-folder?dir=${encodeURIComponent(s.saveDir)}`);
-                const data = await res.json();
-                if (data.code !== 0) alert(data.message || "打开文件夹失败");
-            } catch (e) {
-                alert("请求打开文件夹失败: " + e.message);
+        function setToken(token) {
+            if (token) {
+                localStorage.setItem("bilidown_token", token);
+            } else {
+                localStorage.removeItem("bilidown_token");
             }
         }
 
-        function saveTaskMeta(id, meta) {
+        function isLocalhost() {
+            const h = window.location.hostname;
+            return h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' || h === '::1';
+        }
+
+        // 统一网络请求封装 (自动携带 Bearer Token 与 401 拦截)
+        async function authFetch(url, options = {}) {
+            options.headers = options.headers || {};
+            const token = getToken();
+            if (token) {
+                options.headers["Authorization"] = `Bearer ${token}`;
+            }
+            const res = await fetch(url, options);
+            if (res.status === 401) {
+                setToken("");
+                window.currentSystemUser = null;
+                window.currentBiliUser = null;
+                updateUserUI();
+                openAuthModal('login');
+                throw new Error("请先登录系统账号");
+            }
+            return res;
+        }
+
+        function showToast(msg) {
+            let toast = document.getElementById("globalToast");
+            if (!toast) {
+                toast = document.createElement("div");
+                toast.id = "globalToast";
+                toast.className = "fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900/90 text-white text-xs px-4 py-2.5 rounded-full shadow-2xl z-50 transition-all duration-300 pointer-events-none";
+                document.body.appendChild(toast);
+            }
+            toast.innerText = msg;
+            toast.style.opacity = "1";
+            toast.style.transform = "translate(-50%, 0)";
+            clearTimeout(window.toastTimer);
+            window.toastTimer = setTimeout(() => {
+                toast.style.opacity = "0";
+                toast.style.transform = "translate(-50%, 10px)";
+            }, 2500);
+        }
+
+        // ==================== 认证与用户管理 ====================
+
+        function openAuthModal(mode = 'login') {
+            document.getElementById("authModal").classList.remove("hidden");
+            switchAuthTab(mode);
+        }
+
+        function closeAuthModal() {
+            document.getElementById("authModal").classList.add("hidden");
+        }
+
+        function switchAuthTab(tab) {
+            const btnLogin = document.getElementById("authTabLogin");
+            const btnReg = document.getElementById("authTabRegister");
+            const formLogin = document.getElementById("loginForm");
+            const formReg = document.getElementById("registerForm");
+            const modalTitle = document.getElementById("authModalTitle");
+
+            if (tab === 'login') {
+                btnLogin.className = "flex-1 py-1.5 text-xs font-semibold rounded-lg transition bg-white text-blue-600 shadow-sm";
+                btnReg.className = "flex-1 py-1.5 text-xs font-semibold rounded-lg transition text-slate-500 hover:text-slate-800";
+                formLogin.classList.remove("hidden");
+                formReg.classList.add("hidden");
+                modalTitle.innerText = "登录系统账号";
+            } else {
+                btnReg.className = "flex-1 py-1.5 text-xs font-semibold rounded-lg transition bg-white text-blue-600 shadow-sm";
+                btnLogin.className = "flex-1 py-1.5 text-xs font-semibold rounded-lg transition text-slate-500 hover:text-slate-800";
+                formReg.classList.remove("hidden");
+                formLogin.classList.add("hidden");
+                modalTitle.innerText = "快速注册新用户";
+            }
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById("loginUsername").value.trim();
+            const password = document.getElementById("loginPassword").value.trim();
+            if (!username || !password) return alert("请输入用户名与密码！");
+
             try {
-                const metas = JSON.parse(localStorage.getItem("bbdown_task_metas") || "{}");
-                metas[id] = meta;
-                localStorage.setItem("bbdown_task_metas", JSON.stringify(metas));
+                const res = await fetch("/api/auth/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await res.json();
+                if (data.code !== 0) throw new Error(data.message || "登录失败");
+
+                setToken(data.token);
+                closeAuthModal();
+                showToast(`🎉 欢迎回来，${data.user.username}！`);
+                await checkUserStatus();
+                refreshTasks();
+            } catch (err) {
+                alert("登录失败: " + err.message);
+            }
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            const username = document.getElementById("regUsername").value.trim();
+            const password = document.getElementById("regPassword").value.trim();
+            const confirm = document.getElementById("regPasswordConfirm").value.trim();
+
+            if (!username || !password) return alert("请完整填写用户名与密码！");
+            if (password !== confirm) return alert("两次输入的密码不一致！");
+
+            try {
+                const res = await fetch("/api/auth/register", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await res.json();
+                if (data.code !== 0) throw new Error(data.message || "注册失败");
+
+                setToken(data.token);
+                closeAuthModal();
+                showToast(`🎉 注册成功！已为您分配独立存储空间：${data.user.username}`);
+                await checkUserStatus();
+                refreshTasks();
+            } catch (err) {
+                alert("注册失败: " + err.message);
+            }
+        }
+
+        async function logoutSystem() {
+            if (!confirm("确定要退出当前系统账号吗？")) return;
+            try {
+                await fetch("/api/auth/logout", {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${getToken()}` }
+                });
             } catch (e) {}
+            setToken("");
+            window.currentSystemUser = null;
+            window.currentBiliUser = null;
+            closeUserDropdown();
+            updateUserUI();
+            renderTaskList([], []);
+            showToast("已退出系统账号");
+            openAuthModal('login');
         }
 
-        function getTaskMeta(id) {
-            try {
-                const metas = JSON.parse(localStorage.getItem("bbdown_task_metas") || "{}");
-                return metas[id];
-            } catch (e) { return null; }
+        function toggleUserDropdown(event) {
+            event.stopPropagation();
+            const menu = document.getElementById("userDropdownMenu");
+            menu.classList.toggle("hidden");
         }
 
-        function updateSaveDirDisplay() {
-            const s = getSettings();
-            const el = document.getElementById("displaySaveDir");
-            if (el) el.innerText = s.saveDir;
+        function closeUserDropdown() {
+            const menu = document.getElementById("userDropdownMenu");
+            if (menu) menu.classList.add("hidden");
         }
 
-        function saveSettings() {
-            localStorage.setItem("bbdown_server_url", document.getElementById("settingServerUrl").value.trim());
-            localStorage.setItem("bbdown_save_dir", document.getElementById("settingSaveDir").value.trim() || "/home/maple/Downloads");
-            localStorage.setItem("bbdown_cookie", document.getElementById("settingCookie").value.trim());
-            localStorage.setItem("bbdown_tv_mode", document.getElementById("settingTvMode").checked);
-            localStorage.setItem("bbdown_add_dfn", document.getElementById("settingAddDfn").checked);
-            updateSaveDirDisplay();
-            toggleSettingsModal();
-            checkUserStatus();
-            alert("配置已保存！");
-        }
+        document.addEventListener("click", () => {
+            closeUserDropdown();
+        });
 
-        function toggleSettingsModal() {
-            const modal = document.getElementById("settingsModal");
-            modal.classList.toggle("hidden");
-            const s = getSettings();
-            document.getElementById("settingServerUrl").value = s.serverUrl;
-            document.getElementById("settingSaveDir").value = s.saveDir;
-            document.getElementById("settingCookie").value = s.cookie;
-            document.getElementById("settingTvMode").checked = s.tvMode;
-            document.getElementById("settingAddDfn").checked = s.addDfn;
-        }
-
-        // 检查用户登录状态
+        // 检查当前系统与 B 站状态
         async function checkUserStatus() {
             try {
-                const res = await fetch("/api/user/status");
+                const res = await authFetch("/api/auth/me");
                 const data = await res.json();
-                const loginBtn = document.getElementById("navLoginBtn");
-                const userCard = document.getElementById("navUserCard");
-
-                if (data.is_login) {
-                    window.currentUser = data;
-                    if (data.cookie) {
-                        localStorage.setItem("bbdown_cookie", data.cookie);
-                    }
-                    loginBtn.classList.add("hidden");
-                    userCard.classList.remove("hidden");
-                    document.getElementById("navUserName").innerText = data.uname;
-                    document.getElementById("navUserAvatar").src = data.face;
-                    const badge = document.getElementById("navVipBadge");
-                    if (data.vip_label) {
-                        badge.innerText = data.vip_label;
-                        badge.classList.remove("hidden");
-                    } else {
-                        badge.classList.add("hidden");
-                    }
+                if (data.is_authenticated && data.user) {
+                    window.currentSystemUser = data.user;
+                    window.currentBiliUser = data.user.bili || null;
+                    updateUserUI();
                 } else {
-                    window.currentUser = null;
-                    loginBtn.classList.remove("hidden");
-                    userCard.classList.add("hidden");
+                    window.currentSystemUser = null;
+                    window.currentBiliUser = null;
+                    updateUserUI();
                 }
             } catch (e) {
-                console.log("获取用户状态失败:", e);
+                window.currentSystemUser = null;
+                window.currentBiliUser = null;
+                updateUserUI();
             }
         }
 
-        // 扫码登录流程
+        function updateUserUI() {
+            const navAuthBtn = document.getElementById("navAuthBtn");
+            const navUserPill = document.getElementById("navUserPill");
+            const navBiliAvatar = document.getElementById("navBiliAvatar");
+            const navDefaultAvatar = document.getElementById("navDefaultAvatar");
+            const navSystemName = document.getElementById("navSystemName");
+            const navVipBadge = document.getElementById("navVipBadge");
+            const dropdownUsername = document.getElementById("dropdownUsername");
+            const dropdownSaveDir = document.getElementById("dropdownSaveDir");
+            const biliBindStatus = document.getElementById("biliBindStatus");
+            const biliLoginActionBtn = document.getElementById("biliLoginActionBtn");
+            const biliLogoutActionBtn = document.getElementById("biliLogoutActionBtn");
+            const displaySaveDir = document.getElementById("displaySaveDir");
+            const openFolderBtn = document.getElementById("openFolderBtn");
+
+            // 判断环境隐藏或显示 "打开主机目录"
+            if (openFolderBtn) {
+                if (isLocalhost()) {
+                    openFolderBtn.classList.remove("hidden");
+                } else {
+                    openFolderBtn.classList.add("hidden");
+                }
+            }
+
+            if (window.currentSystemUser) {
+                navAuthBtn.classList.add("hidden");
+                navUserPill.classList.remove("hidden");
+                navSystemName.innerText = window.currentSystemUser.username;
+                dropdownUsername.innerText = `系统账号: ${window.currentSystemUser.username}`;
+                dropdownSaveDir.innerText = `目录: ${window.currentSystemUser.save_dir}`;
+                dropdownSaveDir.title = window.currentSystemUser.save_dir;
+                displaySaveDir.innerText = window.currentSystemUser.save_dir;
+
+                const bili = window.currentBiliUser;
+                if (bili && bili.is_login) {
+                    navBiliAvatar.src = bili.face;
+                    navBiliAvatar.classList.remove("hidden");
+                    navDefaultAvatar.classList.add("hidden");
+                    biliBindStatus.innerText = bili.uname;
+                    biliBindStatus.className = "font-bold text-blue-600 truncate max-w-[120px]";
+                    biliLoginActionBtn.classList.add("hidden");
+                    biliLogoutActionBtn.classList.remove("hidden");
+
+                    if (bili.vip_label) {
+                        navVipBadge.innerText = bili.vip_label;
+                        navVipBadge.classList.remove("hidden");
+                    } else {
+                        navVipBadge.classList.add("hidden");
+                    }
+                } else {
+                    navBiliAvatar.classList.add("hidden");
+                    navDefaultAvatar.classList.remove("hidden");
+                    navVipBadge.classList.add("hidden");
+                    biliBindStatus.innerText = "未绑定";
+                    biliBindStatus.className = "font-bold text-slate-400";
+                    biliLoginActionBtn.classList.remove("hidden");
+                    biliLogoutActionBtn.classList.add("hidden");
+                }
+            } else {
+                navAuthBtn.classList.remove("hidden");
+                navUserPill.classList.add("hidden");
+                displaySaveDir.innerText = "请先登录";
+            }
+        }
+
+        // ==================== B 站扫码绑定 ====================
+
         function openLoginModal() {
+            closeUserDropdown();
+            if (!window.currentSystemUser) {
+                openAuthModal('login');
+                return;
+            }
             document.getElementById("loginModal").classList.remove("hidden");
             refreshLoginQRCode();
         }
@@ -497,13 +812,12 @@
             }
 
             try {
-                const res = await fetch("/api/login/qrcode");
+                const res = await authFetch("/api/login/qrcode");
                 const data = await res.json();
                 if (data.code !== 0) throw new Error(data.message);
 
                 const { url, qrcode_key } = data.data;
 
-                // 渲染二维码
                 container.innerHTML = "";
                 qrCodeObj = new QRCode(container, {
                     text: url,
@@ -515,29 +829,23 @@
                 });
 
                 loadingOverlay.classList.add("hidden");
-
-                // 开始轮询扫码状态
                 qrPollTimer = setInterval(() => pollQRCode(qrcode_key), 1800);
             } catch (e) {
                 loadingOverlay.classList.add("hidden");
-                alert("获取登录二维码失败: " + e.message);
+                alert("获取二维码失败: " + e.message);
             }
         }
 
         async function pollQRCode(key) {
             try {
-                const res = await fetch(`/api/login/poll?key=${key}`);
+                const res = await authFetch(`/api/login/poll?key=${key}`);
                 const data = await res.json();
                 const statusText = document.getElementById("loginStatusText");
 
                 if (data.code === 0) {
-                    // 登录成功！
-                    if (data.cookie) {
-                        localStorage.setItem("bbdown_cookie", data.cookie);
-                    }
                     clearInterval(qrPollTimer);
                     qrPollTimer = null;
-                    statusText.innerText = "🎉 登录成功！正在同步配置...";
+                    statusText.innerText = "🎉 绑定成功！正在刷新用户状态...";
                     document.getElementById("loginStatusBadge").className = "mt-4 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 flex items-center gap-2";
                     
                     setTimeout(() => {
@@ -552,38 +860,117 @@
                     document.getElementById("qrcodeExpiredOverlay").classList.remove("hidden");
                 }
             } catch (e) {
-                console.log("轮询登录状态异常:", e);
+                console.log("轮询 B 站登录状态异常:", e);
             }
         }
 
-        async function logout() {
-            if (!confirm("确定要退出当前登录的 B 站账号吗？")) return;
+        async function logoutBili() {
+            if (!confirm("确定要解除当前绑定的 B 站账号吗？")) return;
             try {
-                await fetch("/api/user/logout", { method: "POST" });
-                localStorage.removeItem("bbdown_cookie");
-                checkUserStatus();
-                alert("已退出登录");
+                await authFetch("/api/user/logout-bili", { method: "POST" });
+                closeUserDropdown();
+                await checkUserStatus();
+                showToast("已解绑 B 站账号");
             } catch (e) {
-                alert("退出失败: " + e.message);
+                alert("解绑失败: " + e.message);
             }
         }
 
-        function showToast(msg) {
-            let toast = document.getElementById("globalToast");
-            if (!toast) {
-                toast = document.createElement("div");
-                toast.id = "globalToast";
-                toast.className = "fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900/90 text-white text-xs px-4 py-2.5 rounded-full shadow-xl z-50 transition-all duration-300 pointer-events-none";
-                document.body.appendChild(toast);
+        // ==================== 播放器弹窗与下载 ====================
+
+        function openVideoPlayer(streamUrl, title, filename, downloadUrl) {
+            const modal = document.getElementById("videoPlayerModal");
+            const player = document.getElementById("videoPlayerElem");
+            const titleElem = document.getElementById("playerModalTitle");
+            const metaElem = document.getElementById("playerModalMeta");
+            const dlBtn = document.getElementById("playerModalDownloadBtn");
+
+            titleElem.innerText = title || filename;
+            metaElem.innerText = `文件: ${filename}`;
+            dlBtn.href = downloadUrl;
+            dlBtn.download = filename;
+
+            player.src = streamUrl;
+            modal.classList.remove("hidden");
+            player.play().catch(() => {});
+        }
+
+        function closeVideoModal() {
+            const modal = document.getElementById("videoPlayerModal");
+            const player = document.getElementById("videoPlayerElem");
+            player.pause();
+            player.removeAttribute("src");
+            player.load();
+            modal.classList.add("hidden");
+        }
+
+        // ==================== 配置与基础操作 ====================
+
+        function getSettings() {
+            return {
+                saveDir: (window.currentSystemUser && window.currentSystemUser.save_dir) || localStorage.getItem("bbdown_save_dir") || "",
+                tvMode: localStorage.getItem("bbdown_tv_mode") === "true",
+                addDfn: localStorage.getItem("bbdown_add_dfn") !== "false"
+            };
+        }
+
+        async function openDownloadFolder(targetDir) {
+            const s = getSettings();
+            const dir = targetDir || s.saveDir;
+            try {
+                const res = await authFetch(`/api/open-folder?dir=${encodeURIComponent(dir)}`);
+                const data = await res.json();
+                if (data.code !== 0) alert(data.message || "打开文件夹失败");
+            } catch (e) {
+                alert("打开文件夹失败: " + e.message);
             }
-            toast.innerText = msg;
-            toast.style.opacity = "1";
-            toast.style.transform = "translate(-50%, 0)";
-            clearTimeout(window.toastTimer);
-            window.toastTimer = setTimeout(() => {
-                toast.style.opacity = "0";
-                toast.style.transform = "translate(-50%, 10px)";
-            }, 2500);
+        }
+
+        async function saveSettings() {
+            const newSaveDir = document.getElementById("settingSaveDir").value.trim();
+            const manualCookie = document.getElementById("settingCookie").value.trim();
+
+            if (newSaveDir && window.currentSystemUser && newSaveDir !== window.currentSystemUser.save_dir) {
+                try {
+                    const res = await authFetch("/api/user/save-dir", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ save_dir: newSaveDir })
+                    });
+                    const d = await res.json();
+                    if (d.code !== 0) throw new Error(d.message);
+                    window.currentSystemUser.save_dir = d.save_dir;
+                } catch (e) {
+                    alert("更新路径失败: " + e.message);
+                    return;
+                }
+            }
+
+            if (manualCookie) {
+                try {
+                    await authFetch("/api/user/bili-cookie", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ cookie: manualCookie })
+                    });
+                } catch (e) {}
+            }
+
+            localStorage.setItem("bbdown_tv_mode", document.getElementById("settingTvMode").checked);
+            localStorage.setItem("bbdown_add_dfn", document.getElementById("settingAddDfn").checked);
+            toggleSettingsModal();
+            await checkUserStatus();
+            showToast("配置已保存！");
+        }
+
+        function toggleSettingsModal() {
+            closeUserDropdown();
+            const modal = document.getElementById("settingsModal");
+            modal.classList.toggle("hidden");
+            const s = getSettings();
+            document.getElementById("settingSaveDir").value = s.saveDir;
+            document.getElementById("settingTvMode").checked = s.tvMode;
+            document.getElementById("settingAddDfn").checked = s.addDfn;
         }
 
         async function pasteClipboard() {
@@ -597,25 +984,19 @@
                         return;
                     }
                 }
-            } catch (e) {
-                console.log("浏览器剪贴板权限受限:", e);
-            }
-            // 优雅降级：聚焦并全选输入框，浮动气泡提示，绝不弹出阻塞报错窗口
+            } catch (e) {}
             input.focus();
             input.select();
-            showToast("💡 浏览器限制直接读取剪贴板，请直接按 Ctrl + V 粘贴");
+            showToast("💡 请直接按 Ctrl + V 粘贴视频链接");
         }
-
-        let selectedQualityObj = null;
 
         function renderQualityOptions(qualities) {
             const container = document.getElementById("qualityOptions");
             if (!container) return;
             container.innerHTML = "";
 
-            // 智能确定默认选中项：若当前是大会员则选最高画质，否则选非大会员最高画质
-            const user = window.currentUser || null;
-            const isVip = Boolean(user && (user.vip_type > 0 || user.vip_label === "大会员"));
+            const bili = window.currentBiliUser;
+            const isVip = Boolean(bili && (bili.vip_type > 0 || bili.vip_label === "大会员"));
             let defaultIdx = -1;
             if (isVip) {
                 defaultIdx = 0;
@@ -670,13 +1051,13 @@
             selectedQualityObj = qualities[defaultIdx] || qualities[0];
         }
 
-        function loadSample(url) {
-            document.getElementById("urlInput").value = url;
-            parseVideo();
-        }
-
-        // 解析视频元数据 (通过本地 /api/parse 解决 CORS 跨域)
+        // 解析视频
         async function parseVideo() {
+            if (!window.currentSystemUser) {
+                openAuthModal('login');
+                return;
+            }
+
             const rawUrl = document.getElementById("urlInput").value.trim();
             if (!rawUrl) return alert("请输入视频链接！");
 
@@ -684,8 +1065,7 @@
             document.getElementById("resultCard").classList.add("hidden");
 
             try {
-                // 本地代理请求，避免浏览器直接请求 B 站报 NetworkError CORS 错误
-                const res = await fetch(`/api/parse?url=${encodeURIComponent(rawUrl)}`);
+                const res = await authFetch(`/api/parse?url=${encodeURIComponent(rawUrl)}`);
                 const data = await res.json();
                 if (data.code !== 0) throw new Error(data.message || "B 站接口返回错误");
 
@@ -704,10 +1084,8 @@
                 document.getElementById("authorName").innerText = v.owner;
                 document.getElementById("videoBvid").innerText = v.bvid;
                 document.getElementById("videoDuration").innerText = currentVideoData.duration;
-                // 使用后端反代图片，确保 100% 能够加载 B 站图片，防止防盗链与 403
                 document.getElementById("videoCover").src = `/api/image-proxy?url=${encodeURIComponent(v.pic)}`;
 
-                // 动态渲染视频支持的画质与真实预估大小
                 if (v.qualities && v.qualities.length > 0) {
                     renderQualityOptions(v.qualities);
                 }
@@ -715,7 +1093,7 @@
                 document.getElementById("resultCard").classList.remove("hidden");
             } catch (err) {
                 document.getElementById("resultCard").classList.add("hidden");
-                alert("⚠️ 视频解析失败: " + err.message + "\n\n提示：若提示【啥都木有】，说明该视频在 B 站已被删除下架或 BV 号输错。");
+                alert("⚠️ 视频解析失败: " + err.message);
             } finally {
                 document.getElementById("loading").classList.add("hidden");
             }
@@ -746,8 +1124,11 @@
             await executeDownloadTask(payload);
         }
 
-        // 发送下载任务给 BBDown Api Server
         async function submitDownloadTask() {
+            if (!window.currentSystemUser) {
+                openAuthModal('login');
+                return;
+            }
             if (!currentVideoData || !selectedQualityObj) return alert("请先解析视频！");
             const s = getSettings();
             const q = selectedQualityObj;
@@ -768,28 +1149,22 @@
                 DfnPriority: isAudio ? null : (q.dfn || q.desc),
                 AudioOnly: isAudio,
                 FilePattern: filePattern,
-                WorkDir: s.saveDir || "/home/maple/Downloads",
-                // 附加精准元数据，确保任务列表精确显示
+                WorkDir: s.saveDir,
                 Title: currentVideoData.title,
                 QualityLabel: q.desc,
                 DfnTag: dfnTag,
                 ExpectedExt: expectedExt
             };
 
-            const cookieToUse = s.cookie || localStorage.getItem("bbdown_cookie") || "";
-            if (cookieToUse) {
-                payload.Cookie = cookieToUse.startsWith("SESSDATA=") ? cookieToUse : `SESSDATA=${cookieToUse}`;
-            }
-
-            // 先检查本地是否存在同名同画质文件
+            // 检查个人保存目录冲突
             try {
                 const checkParams = new URLSearchParams({
                     title: currentVideoData.title,
                     dfnTag: s.addDfn ? dfnTag : "",
                     expectedExt: expectedExt,
-                    workDir: s.saveDir || "/home/maple/Downloads"
+                    workDir: s.saveDir
                 });
-                const checkRes = await fetch(`/api/check-file?${checkParams.toString()}`);
+                const checkRes = await authFetch(`/api/check-file?${checkParams.toString()}`);
                 if (checkRes.ok) {
                     const checkData = await checkRes.json();
                     if (checkData.exists && checkData.file) {
@@ -810,7 +1185,7 @@
 
         async function executeDownloadTask(payload) {
             try {
-                const res = await fetch("/api/task/add", {
+                const res = await authFetch("/api/task/add", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload)
@@ -825,9 +1200,9 @@
             }
         }
 
-        async function removeTask(aid) {
+        async function removeTask(taskId) {
             try {
-                await fetch(`/api/task/remove?aid=${encodeURIComponent(aid)}`);
+                await authFetch(`/api/task/remove?id=${encodeURIComponent(taskId)}`);
                 refreshTasks();
                 showToast("已移除任务记录");
             } catch (e) {
@@ -835,27 +1210,26 @@
             }
         }
 
-        // 定时轮询任务状态
-        async function refreshTasks() {
+        async function clearTasks() {
+            if (!confirm("确定要清空您的下载任务记录吗？（不会删除服务器已下载的文件）")) return;
             try {
-                const res = await fetch("/api/tasks");
+                await authFetch("/api/tasks/clear");
+                refreshTasks();
+                showToast("已清空个人下载记录");
+            } catch (e) {
+                alert("清空失败: " + e.message);
+            }
+        }
+
+        async function refreshTasks() {
+            if (!window.currentSystemUser) return;
+            try {
+                const res = await authFetch("/api/tasks");
                 if (!res.ok) return;
                 const data = await res.json();
                 renderTaskList(data.Running || [], data.Finished || []);
             } catch (e) {
                 console.log("轮询任务列表状态失败:", e);
-            }
-        }
-
-        async function clearTasks() {
-            if (!confirm("确定要清空已完成的任务下载记录吗？（不会删除已下载的文件）")) return;
-            try {
-                await fetch("/api/tasks/clear");
-                localStorage.removeItem("bbdown_task_metas");
-                refreshTasks();
-                showToast("已清空下载记录");
-            } catch (e) {
-                alert("清空失败: " + e.message);
             }
         }
 
@@ -872,8 +1246,9 @@
             if (notice) notice.classList.add("hidden");
 
             let html = "";
+            const token = getToken();
 
-            // 渲染正在运行的任务
+            // 正在运行中的任务
             running.forEach(t => {
                 const speedMB = (t.DownloadSpeed / (1024 * 1024)).toFixed(2);
                 const percent = Math.round((t.Progress || 0) * 100);
@@ -893,35 +1268,63 @@
                         <div class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: ${percent}%"></div>
                     </div>
                     <div class="flex justify-between text-xs text-slate-400">
-                        <span>正在高速下载混流中...</span>
+                        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span> 正在高速下载与混流...</span>
                         <span>${percent}%</span>
                     </div>
                 </div>`;
             });
 
-            // 渲染已完成的任务
+            // 已完成的任务 (支持手机端一键存盘、直接流式播放)
             finished.forEach(t => {
-                const meta = getTaskMeta(t.Aid) || {};
-                const qLabelText = t.QualityLabel || meta.qualityLabel || "";
-                const qLabel = qLabelText 
-                    ? `<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">${qLabelText}</span>` 
+                const qLabel = t.QualityLabel 
+                    ? `<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">${t.QualityLabel}</span>` 
                     : "";
                 
-                // 优先展示来自磁盘检测到的真实文件体积与名称
                 let sizeDisplay = "";
                 let nameDisplay = t.ActualFileName || t.Title || t.Url;
                 if (t.ActualSize) {
-                    const fileWarn = t.FileExists === false ? `<span class="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">已移出保存目录</span>` : "";
+                    const fileWarn = t.FileExists === false ? `<span class="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">文件已移出目录</span>` : "";
                     sizeDisplay = `<span class="text-xs text-slate-500 font-mono">体积: ${t.ActualSize}</span> ${fileWarn}`;
                 } else if (t.TotalDownloadedBytes > 0) {
                     const mb = (t.TotalDownloadedBytes / (1024 * 1024)).toFixed(1);
                     sizeDisplay = `<span class="text-xs text-slate-500 font-mono">体积: ${mb} MB</span>`;
-                } else if (t.IsSuccessful) {
-                    sizeDisplay = `<span class="text-xs text-amber-600 font-medium">⚠️ 相同画质文件已存在 (无需重复下载)</span>`;
                 }
 
+                // 带有 token 凭据的移动端与流式 URL
+                const dlUrl = `${t.DownloadUrl}&token=${encodeURIComponent(token)}`;
+                const stUrl = `${t.StreamUrl}&token=${encodeURIComponent(token)}`;
+                const isLocal = isLocalhost();
+
+                // 操作按钮组
+                let actionButtons = "";
+                if (t.FileExists) {
+                    actionButtons += `
+                        <button onclick="openVideoPlayer('${stUrl}', '${escapeHtml(t.Title)}', '${escapeHtml(t.ActualFileName)}', '${dlUrl}')" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-medium active:scale-95">
+                            <i class="fa-solid fa-play text-[10px]"></i>
+                            <span>播放</span>
+                        </button>
+                        <a href="${dlUrl}" download="${escapeHtml(t.ActualFileName)}" class="text-xs bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-500/20 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-medium active:scale-95">
+                            <i class="fa-solid fa-download text-[10px]"></i>
+                            <span>存至手机 / 下载</span>
+                        </a>
+                    `;
+                }
+                if (isLocal) {
+                    actionButtons += `
+                        <button onclick="openDownloadFolder('${escapeHtml(t.WorkDir)}')" class="text-xs text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-medium">
+                            <i class="fa-regular fa-folder-open"></i>
+                            <span class="hidden sm:inline">打开目录</span>
+                        </button>
+                    `;
+                }
+                actionButtons += `
+                    <button onclick="removeTask('${t.Id}')" title="删除记录" class="text-xs text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 transition">
+                        <i class="fa-regular fa-trash-can"></i>
+                    </button>
+                `;
+
                 html += `
-                <div class="bg-white/80 p-3.5 rounded-xl border border-slate-100 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div class="bg-white/90 p-3.5 rounded-xl border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
                     <div class="flex items-center gap-3 truncate max-w-xl">
                         <div class="w-8 h-8 rounded-lg ${t.IsSuccessful && !t.IsFailed ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'} flex items-center justify-center text-xs flex-shrink-0">
                             <i class="fa-solid ${t.IsSuccessful && !t.IsFailed ? 'fa-check' : 'fa-xmark'}"></i>
@@ -934,16 +1337,8 @@
                             </div>
                         </div>
                     </div>
-                    <div class="flex items-center gap-2 self-end sm:self-center">
-                        <button onclick="openDownloadFolder()" class="text-xs text-slate-600 hover:text-blue-600 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 font-medium">
-                            <i class="fa-regular fa-folder-open"></i> <span>打开目录</span>
-                        </button>
-                        <span class="text-xs px-2.5 py-1 rounded-full font-medium ${t.IsSuccessful && !t.IsFailed ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}">
-                            ${t.StatusText || (t.IsSuccessful ? '已完成' : '失败')}
-                        </span>
-                        <button onclick="removeTask('${t.Aid}')" title="删除记录" class="text-xs text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 transition">
-                            <i class="fa-regular fa-trash-can"></i>
-                        </button>
+                    <div class="flex flex-wrap items-center gap-1.5 self-end md:self-center">
+                        ${actionButtons}
                     </div>
                 </div>`;
             });
@@ -951,11 +1346,22 @@
             listDiv.innerHTML = html;
         }
 
-        // 页面初始化
-        updateSaveDirDisplay();
-        checkUserStatus();
-        setInterval(refreshTasks, 3000);
-        refreshTasks();
+        function escapeHtml(str) {
+            if (!str) return "";
+            return str.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        }
+
+        // ==================== 初始化 ====================
+        (async function init() {
+            await checkUserStatus();
+            if (window.currentSystemUser) {
+                refreshTasks();
+            } else {
+                // 如果尚未登录，弹出登录弹窗方便首次使用
+                openAuthModal('login');
+            }
+            setInterval(refreshTasks, 3000);
+        })();
     </script>
 </body>
 </html>
