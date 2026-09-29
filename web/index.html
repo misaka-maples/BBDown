@@ -785,7 +785,7 @@
             try {
                 const checkParams = new URLSearchParams({
                     title: currentVideoData.title,
-                    dfnTag: dfnTag,
+                    dfnTag: s.addDfn ? dfnTag : "",
                     expectedExt: expectedExt,
                     workDir: s.saveDir || "/home/maple/Downloads"
                 });
