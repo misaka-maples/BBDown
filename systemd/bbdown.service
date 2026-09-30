@@ -1,0 +1,15 @@
+[Unit]
+Description=BBDown Web Service
+After=network.target
+
+[Service]
+Type=simple
+User=openarmx
+WorkingDirectory=/home/openarmx/BBDown
+ExecStart=/usr/bin/python3 /home/openarmx/BBDown/start_web.py
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

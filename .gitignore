@@ -380,5 +380,6 @@ debug_*.json
 BBDown.data
 data/
 *.db
+public_url.txt
 
 
