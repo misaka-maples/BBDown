@@ -147,7 +147,7 @@
                         <i class="fa-solid fa-link text-base sm:text-lg"></i>
                     </div>
                     <input id="urlInput" type="text" 
-                        placeholder="粘贴 B 站或 X (Twitter) 视频链接，例如 bilibili.com、x.com、twitter.com" 
+                        placeholder="粘贴 B 站、YouTube 或 X (Twitter) 视频链接，例如 bilibili.com、youtu.be、x.com" 
                         class="w-full py-2.5 sm:py-3 px-2 bg-transparent text-slate-800 placeholder-slate-400 outline-none text-sm sm:text-base font-normal">
                     <button onclick="pasteClipboard()" class="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition mr-1" title="粘贴剪贴板">
                         <i class="fa-regular fa-paste"></i>
@@ -165,6 +165,7 @@
         <div class="flex flex-wrap items-center justify-center gap-3 sm:gap-4 mt-3 text-[11px] sm:text-xs text-slate-500">
             <span class="flex items-center gap-1"><i class="fa-solid fa-download text-blue-600"></i> 默认拉起浏览器下载</span>
             <span class="flex items-center gap-1"><i class="fa-solid fa-folder-arrow-down text-emerald-500"></i> 默认存入本机下载夹</span>
+            <span class="flex items-center gap-1"><i class="fa-brands fa-youtube text-red-600"></i> 支持 YouTube 4K/原画</span>
             <span class="flex items-center gap-1"><i class="fa-brands fa-x-twitter text-slate-800"></i> 支持 X (Twitter) 原画</span>
             <span class="flex items-center gap-1"><i class="fa-solid fa-crown text-pink-500"></i> B 站大会员 4K/原画</span>
         </div>
@@ -954,6 +955,13 @@
                 if (noticeElem) {
                     noticeElem.classList.add("hidden");
                 }
+            } else if (platform === "youtube") {
+                if (modeBanner) {
+                    modeBanner.innerHTML = `<span class="text-red-600 font-bold flex items-center gap-1.5"><i class="fa-brands fa-youtube text-base"></i><span>YouTube 8K/4K/高清多清晰度通道</span></span>`;
+                }
+                if (noticeElem) {
+                    noticeElem.classList.add("hidden");
+                }
             } else if (isBiliLogin && bili && bili.is_login) {
                 if (modeBanner) {
                     modeBanner.innerHTML = `<span class="text-pink-600 font-semibold"><i class="fa-solid fa-crown mr-1"></i>已解锁全高清画质</span>`;
@@ -988,7 +996,7 @@
 
             const isVip = Boolean(bili && (bili.vip_type > 0 || bili.vip_label === "大会员"));
             let defaultIdx = -1;
-            if (platform === "twitter" || isVip) {
+            if (platform === "twitter" || platform === "youtube" || isVip) {
                 defaultIdx = 0;
             } else {
                 defaultIdx = qualities.findIndex(q => !q.is_audio && q.badge !== "大会员");
@@ -1075,6 +1083,8 @@
                 document.getElementById("authorName").innerText = v.owner;
                 if (platform === "twitter") {
                     document.getElementById("videoBvid").innerHTML = `<span class="bg-black text-white px-2 py-0.5 rounded font-mono inline-flex items-center gap-1"><i class="fa-brands fa-x-twitter"></i><span>${escapeHtml(v.bvid)}</span></span>`;
+                } else if (platform === "youtube") {
+                    document.getElementById("videoBvid").innerHTML = `<span class="bg-red-600 text-white px-2 py-0.5 rounded font-mono inline-flex items-center gap-1"><i class="fa-brands fa-youtube"></i><span>${escapeHtml(v.bvid)}</span></span>`;
                 } else {
                     document.getElementById("videoBvid").innerText = v.bvid;
                 }
@@ -1140,6 +1150,7 @@
                 Url: currentVideoData.url,
                 Platform: currentVideoData.platform || "bilibili",
                 DirectUrl: q.direct_url || "",
+                FormatSelector: q.format_selector || "",
                 Aid: currentVideoData.aid,
                 UseTvApi: s.tvMode,
                 DfnPriority: isAudio ? null : (q.dfn || q.desc),
@@ -1191,7 +1202,11 @@
 
         async function executeDownloadTask(payload) {
             const isX = payload.Platform === "twitter";
-            setDownloadBtnWorking(isX ? "正在添加至 X 原画下载队列..." : "正在添加至云端下载队列...");
+            const isYT = payload.Platform === "youtube";
+            let workingText = "正在添加至云端下载队列...";
+            if (isX) workingText = "正在添加至 X 原画下载队列...";
+            else if (isYT) workingText = "正在添加至 YouTube 原画下载队列...";
+            setDownloadBtnWorking(workingText);
             try {
                 const res = await authFetch("/api/task/add", {
                     method: "POST",
@@ -1205,8 +1220,15 @@
                     pendingAutoDownloadTaskIds.add(result.taskId);
                     currentActiveTaskId = result.taskId;
                 }
-                setDownloadBtnWorking(isX ? "正在云端高速下载原画... 完成后将自动拉起下载" : "正在云端高速下载与混流... 完成后将自动拉起下载");
-                showToast(isX ? "🚀 已启动 X (Twitter) 原画下载，完成后将自动拉起保存！" : "🚀 已启动下载与混流，完成后将自动拉起浏览器保存！");
+                let downloadingText = "正在云端高速下载与混流... 完成后将自动拉起下载";
+                if (isX) downloadingText = "正在云端高速下载原画... 完成后将自动拉起下载";
+                else if (isYT) downloadingText = "正在云端高速下载 YouTube 原画... 完成后将自动拉起下载";
+                setDownloadBtnWorking(downloadingText);
+
+                let toastText = "🚀 已启动下载与混流，完成后将自动拉起浏览器保存！";
+                if (isX) toastText = "🚀 已启动 X (Twitter) 原画下载，完成后将自动拉起保存！";
+                else if (isYT) toastText = "🚀 已启动 YouTube 原画下载，完成后将自动拉起保存！";
+                showToast(toastText);
                 startHighSpeedPolling();
                 refreshTasks();
             } catch (e) {
@@ -1298,9 +1320,13 @@
                 const speedMB = (t.DownloadSpeed / (1024 * 1024)).toFixed(2);
                 const percent = Math.round((t.Progress || 0) * 100);
                 const isX = (t.Aid && String(t.Aid).startsWith("X_")) || (t.Platform === "twitter") || (t.Url && (t.Url.includes("x.com") || t.Url.includes("twitter.com")));
-                const platformBadge = isX 
-                    ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-black text-white shrink-0"><i class="fa-brands fa-x-twitter"></i></span>`
-                    : `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-50 text-bili border border-sky-100 shrink-0">B站</span>`;
+                const isYT = (t.Aid && String(t.Aid).startsWith("YT_")) || (t.Platform === "youtube") || (t.Url && (t.Url.includes("youtube.com") || t.Url.includes("youtu.be")));
+                let platformBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-50 text-bili border border-sky-100 shrink-0">B站</span>`;
+                if (isX) {
+                    platformBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-black text-white shrink-0"><i class="fa-brands fa-x-twitter"></i></span>`;
+                } else if (isYT) {
+                    platformBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-600 text-white shrink-0"><i class="fa-brands fa-youtube"></i></span>`;
+                }
                 const qLabel = t.QualityLabel 
                     ? `<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">${t.QualityLabel}</span>` 
                     : "";
@@ -1318,7 +1344,7 @@
                         <div class="bg-blue-600 h-2.5 rounded-full transition-all duration-300" style="width: ${percent}%"></div>
                     </div>
                     <div class="flex justify-between text-xs text-slate-400">
-                        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span> ${isX ? '正在高速下载原画...' : '正在高速下载与混流...'}</span>
+                        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span> ${isX ? '正在高速下载原画...' : (isYT ? '正在高速下载 YouTube 原画...' : '正在高速下载与混流...')}</span>
                         <span>${percent}%</span>
                     </div>
                 </div>`;
@@ -1327,9 +1353,13 @@
             // 已完成的任务 (支持手机端一键存盘、直接流式播放)
             finished.forEach(t => {
                 const isX = (t.Aid && String(t.Aid).startsWith("X_")) || (t.Platform === "twitter") || (t.Url && (t.Url.includes("x.com") || t.Url.includes("twitter.com")));
-                const platformBadge = isX 
-                    ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-black text-white shrink-0"><i class="fa-brands fa-x-twitter"></i></span>`
-                    : `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-50 text-bili border border-sky-100 shrink-0">B站</span>`;
+                const isYT = (t.Aid && String(t.Aid).startsWith("YT_")) || (t.Platform === "youtube") || (t.Url && (t.Url.includes("youtube.com") || t.Url.includes("youtu.be")));
+                let platformBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-50 text-bili border border-sky-100 shrink-0">B站</span>`;
+                if (isX) {
+                    platformBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-black text-white shrink-0"><i class="fa-brands fa-x-twitter"></i></span>`;
+                } else if (isYT) {
+                    platformBadge = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-600 text-white shrink-0"><i class="fa-brands fa-youtube"></i></span>`;
+                }
                 const qLabel = t.QualityLabel 
                     ? `<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">${t.QualityLabel}</span>` 
                     : "";

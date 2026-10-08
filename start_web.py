@@ -22,6 +22,7 @@ import tempfile
 import shutil
 import socket
 import concurrent.futures
+import yt_dlp
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 
 import db
@@ -392,7 +393,10 @@ def get_proxy_for_url(url):
     2. 自动探测本地及局域网 Clash 常用端口 (127.0.0.1:7890, 172.168.200.192:7890 等)
     3. 普通国内站点 (如 B 站) 自动直连，避免无谓中转
     """
-    need_proxy = any(domain in url for domain in ["twimg.com", "twitter.com", "x.com", "t.co", "fxtwitter.com", "vxtwitter.com"])
+    need_proxy = any(domain in url for domain in [
+        "twimg.com", "twitter.com", "x.com", "t.co", "fxtwitter.com", "vxtwitter.com",
+        "youtube.com", "youtu.be", "ytimg.com", "googlevideo.com", "ggpht.com", "googleusercontent.com"
+    ])
     if not need_proxy:
         return None
 
@@ -772,6 +776,191 @@ def download_direct_file(direct_url, target_file, aid, user_id, task_id, title, 
             if aid_str in ACTIVE_RUNNING_TASKS:
                 del ACTIVE_RUNNING_TASKS[aid_str]
 
+def is_youtube_url(url):
+    if not url:
+        return False
+    u = url.lower()
+    return any(k in u for k in ["youtube.com", "youtu.be"])
+
+def parse_youtube_url(raw_url):
+    """
+    解析 YouTube 视频/Shorts，支持提取最高原画 (8K/4K/1080P) 及纯音频
+    """
+    proxy = get_proxy_for_url(raw_url)
+    ydl_opts = {
+        'skip_download': True,
+        'quiet': True,
+        'no_warnings': True,
+    }
+    if proxy:
+        ydl_opts['proxy'] = proxy
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(raw_url, download=False)
+    except Exception as e:
+        raise ValueError(f"YouTube 视频解析失败: {e}")
+
+    video_id = info.get("id") or "video"
+    title_raw = info.get("title") or f"YouTube_{video_id}"
+    clean_title = get_bbdown_valid_title(title_raw)[:100].strip()
+    duration = int(info.get("duration") or 0)
+    thumbnail = info.get("thumbnail") or ""
+    uploader = info.get("uploader") or info.get("channel") or "YouTube"
+
+    formats = [f for f in info.get("formats", []) if f.get("vcodec") != "none" and f.get("protocol") != "mhtml"]
+    best_audio_tbr = max([f.get("tbr", 0) or 0 for f in info.get("formats", []) if f.get("vcodec") == "none"] or [128])
+
+    TIERS = [
+        (4320, 3000, "8K 超高清", "8K", 130),
+        (2160, 1800, "4K 超清", "4K", 120),
+        (1440, 1300, "2K 超高清", "2K", 116),
+        (1080, 900, "1080P 全高清", "1080P", 80),
+        (720, 650, "720P 高清", "720P", 64),
+        (480, 400, "480P 标清", "480P", 32),
+        (360, 0, "360P 流畅", "360P", 16),
+    ]
+
+    qualities = []
+    for nominal_h, min_h, label, tag, qn in TIERS:
+        matched = [f for f in formats if f.get("height") and min_h <= f.get("height") <= nominal_h]
+        if not matched:
+            continue
+        best_f = max(matched, key=lambda x: (x.get("tbr") or 0, x.get("fps") or 0))
+        h = best_f.get("height")
+        w = best_f.get("width")
+        fps = best_f.get("fps")
+        fps_str = f" {int(fps)}帧" if fps and fps > 30 else ""
+
+        tbr = (best_f.get("tbr") or 0) + best_audio_tbr
+        size_mb = round(tbr * 1000 * duration / 8 / 1024 / 1024, 1) if (tbr and duration) else 0
+        size_str = f"约 {size_mb} MB" if size_mb else "原画质"
+
+        desc = f"{label}{fps_str} ({w}x{h})" if (w and h) else f"{label}{fps_str}"
+        qualities.append({
+            "qn": qn,
+            "desc": desc,
+            "dfn": desc,
+            "dfn_tag": tag,
+            "badge": "最高原画" if len(qualities) == 0 else "",
+            "badge_type": "free",
+            "size": size_str,
+            "is_audio": False,
+            "format_selector": f"bestvideo[height<={h}]+bestaudio/best[height<={h}]/best"
+        })
+
+    # 音频流选项
+    audio_mb = round(best_audio_tbr * 1000 * duration / 8 / 1024 / 1024, 1) if duration else 0
+    qualities.append({
+        "qn": 0,
+        "desc": "仅下载音频 (M4A)",
+        "dfn": "",
+        "dfn_tag": "仅音频",
+        "badge": "纯音频",
+        "badge_type": "audio",
+        "size": f"约 {audio_mb} MB" if audio_mb else "提取原声",
+        "is_audio": True,
+        "format_selector": "bestaudio[ext=m4a]/bestaudio/best"
+    })
+
+    return {
+        "platform": "youtube",
+        "title": clean_title,
+        "raw_text": title_raw,
+        "pic": thumbnail,
+        "bvid": f"YT_{video_id}",
+        "aid": f"YT_{video_id}",
+        "cid": 0,
+        "duration": duration,
+        "owner": uploader,
+        "qualities": qualities,
+        "is_bili_login": False
+    }
+
+def download_youtube_file(url, format_selector, target_file, aid, user_id, task_id, title, dfn_tag, audio_only=False):
+    """
+    后台线程调用 yt-dlp 执行 YouTube 原画或纯音频下载
+    """
+    proxy = get_proxy_for_url(url)
+    os.makedirs(os.path.dirname(target_file), exist_ok=True)
+    temp_dir = os.path.dirname(target_file)
+    temp_stem = os.path.join(temp_dir, f"tmp_yt_{aid}_{int(time.time())}")
+    safe_outtmpl = temp_stem.replace("%", "%%") + ".%(ext)s"
+
+    def progress_hook(d):
+        if d.get("status") == "downloading":
+            total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+            downloaded = d.get("downloaded_bytes", 0)
+            speed = d.get("speed") or 0
+            progress = (downloaded / total) if total > 0 else 0.5
+            with ACTIVE_TASKS_LOCK:
+                aid_str = str(aid)
+                act = ACTIVE_RUNNING_TASKS.get(aid_str)
+                if not act or act.get("cancelled"):
+                    raise Exception(f"任务 {aid} 已被用户取消下载")
+                ACTIVE_RUNNING_TASKS[aid_str]["progress"] = progress
+                ACTIVE_RUNNING_TASKS[aid_str]["speed"] = int(speed)
+                ACTIVE_RUNNING_TASKS[aid_str]["downloaded_bytes"] = downloaded
+                ACTIVE_RUNNING_TASKS[aid_str]["total_bytes"] = total
+
+    ydl_opts = {
+        "format": format_selector or ("bestaudio[ext=m4a]/bestaudio/best" if audio_only else "bestvideo+bestaudio/best"),
+        "outtmpl": safe_outtmpl,
+        "merge_output_format": "mp4" if not audio_only else "m4a",
+        "progress_hooks": [progress_hook],
+        "quiet": True,
+        "no_warnings": True,
+    }
+    if proxy:
+        ydl_opts["proxy"] = proxy
+    if audio_only:
+        ydl_opts["postprocessors"] = [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "m4a",
+        }]
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+
+        # 查找生成的合并文件
+        expected_ext = ".m4a" if audio_only else ".mp4"
+        candidate_file = f"{temp_stem}{expected_ext}"
+        if not os.path.exists(candidate_file):
+            for ext in [".mp4", ".m4a", ".webm", ".mkv"]:
+                p = f"{temp_stem}{ext}"
+                if os.path.exists(p):
+                    candidate_file = p
+                    break
+
+        if os.path.exists(candidate_file):
+            if os.path.exists(target_file):
+                try:
+                    os.remove(target_file)
+                except Exception:
+                    pass
+            shutil.move(candidate_file, target_file)
+            print(f"[✓] YouTube 任务下载完成: {target_file}", flush=True)
+        else:
+            raise FileNotFoundError("未能找到 yt-dlp 生成的目标音视频文件")
+
+    except Exception as e:
+        print(f"[!] YouTube 下载异常: {e}", flush=True)
+        # 清理残留临时文件
+        parent_dir = os.path.dirname(target_file)
+        stem_name = os.path.basename(temp_stem)
+        for f in os.listdir(parent_dir):
+            if f.startswith(stem_name):
+                try:
+                    os.remove(os.path.join(parent_dir, f))
+                except Exception:
+                    pass
+    finally:
+        with ACTIVE_TASKS_LOCK:
+            aid_str = str(aid)
+            if aid_str in ACTIVE_RUNNING_TASKS:
+                del ACTIVE_RUNNING_TASKS[aid_str]
+
 def parse_bili_url(raw_url, cookie="", is_bili_login=False):
     final_url = raw_url
     if raw_url.startswith("http://") or raw_url.startswith("https://"):
@@ -878,6 +1067,7 @@ def is_same_quality(q1, q2):
     aliases = [
         {"8k超高清", "8k"},
         {"4k超清", "4k超高清", "4k"},
+        {"2k超高清", "2k超清", "2k"},
         {"1080p高码率", "1080p高帧率", "1080p60帧", "1080p60"},
         {"1080p高清", "1080p"},
         {"720p高清", "720p准高清", "720p"},
@@ -1109,6 +1299,8 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                 headers = {"User-Agent": DEFAULT_UA}
                 if "twimg.com" in img_url or "twitter.com" in img_url or "x.com" in img_url:
                     headers["Referer"] = "https://x.com/"
+                elif any(d in img_url for d in ["ytimg.com", "youtube.com", "ggpht.com", "googleusercontent.com"]):
+                    headers["Referer"] = "https://www.youtube.com/"
                 else:
                     headers["Referer"] = "https://www.bilibili.com/"
 
@@ -1183,7 +1375,7 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             is_stream = (path == "/api/file/stream")
             return self.send_file_range(file_path, is_stream=is_stream)
 
-        # 3. 视频解析接口 (自动识别 B 站与 X / Twitter 平台)
+        # 3. 视频解析接口 (自动识别 B 站、X / Twitter 与 YouTube 平台)
         if path == "/api/parse":
             url = query.get("url", [""])[0].strip()
             if not url:
@@ -1196,6 +1388,14 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                     return self.send_json(200, {"code": 0, "data": info})
                 except Exception as e:
                     return self.send_json(500, {"code": -1, "message": f"X (Twitter) 解析失败: {e}"})
+
+            # 判断是否为 YouTube 链接
+            if is_youtube_url(url):
+                try:
+                    info = parse_youtube_url(url)
+                    return self.send_json(200, {"code": 0, "data": info})
+                except Exception as e:
+                    return self.send_json(500, {"code": -1, "message": f"YouTube 解析失败: {e}"})
 
             user = self.get_current_user(query)
             cookie = extract_bili_cookie_from_request(self.headers, query) or (user.get("bili_cookie", "") if user else "")
@@ -1788,6 +1988,66 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                     return self.send_json(200, {
                         "code": 0,
                         "message": "已成功启动 X (Twitter) 原画下载",
+                        "taskId": task_id
+                    })
+
+                format_selector = req_data.get("FormatSelector")
+
+                # 处理 YouTube 任务
+                if platform == "youtube" or format_selector:
+                    clean_title = get_bbdown_valid_title(title)
+                    if "<dfn>" in file_pattern or "[<dfn>]" in file_pattern:
+                        target_filename = f"{clean_title} [{dfn_tag}]{expected_ext}" if dfn_tag else f"{clean_title}{expected_ext}"
+                    else:
+                        target_filename = f"{clean_title}{expected_ext}"
+                    target_file_path = os.path.join(work_dir, target_filename)
+
+                    if not aid:
+                        aid = f"YT_{int(time.time() * 1000)}"
+                    elif not str(aid).startswith("YT_"):
+                        aid = f"YT_{aid}"
+
+                    task_meta = {
+                        "url": req_data.get("Url", ""),
+                        "aid": str(aid),
+                        "title": title,
+                        "qualityLabel": req_data.get("QualityLabel", ""),
+                        "dfnTag": dfn_tag,
+                        "workDir": work_dir,
+                        "expectedExt": expected_ext,
+                        "filePattern": file_pattern,
+                        "addTime": time.time()
+                    }
+                    task_id = db.add_user_task(user["id"], task_meta)
+
+                    with ACTIVE_TASKS_LOCK:
+                        ACTIVE_RUNNING_TASKS[str(aid)] = {
+                            "user_id": user["id"],
+                            "task_id": task_id,
+                            "dfn_tag": dfn_tag,
+                            "quality_label": req_data.get("QualityLabel") or dfn_tag,
+                            "work_dir": work_dir,
+                            "start_time": time.time(),
+                            "is_direct": True,
+                            "platform": "youtube",
+                            "progress": 0.0,
+                            "speed": 0,
+                            "downloaded_bytes": 0,
+                            "total_bytes": 0,
+                            "title": title,
+                            "url": req_data.get("Url", ""),
+                            "audio_only": req_data.get("AudioOnly", False)
+                        }
+
+                    threading.Thread(
+                        target=download_youtube_file,
+                        args=(req_data.get("Url", ""), format_selector, target_file_path, str(aid), user["id"], task_id, title, dfn_tag, req_data.get("AudioOnly", False)),
+                        daemon=True
+                    ).start()
+
+                    return self.send_json(200, {
+                        "code": 0,
+                        "message": "已成功启动 YouTube 下载任务",
                         "taskId": task_id
                     })
 
