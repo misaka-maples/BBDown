@@ -20,6 +20,8 @@ import mimetypes
 import threading
 import tempfile
 import shutil
+import socket
+import concurrent.futures
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 
 import db
@@ -383,6 +385,393 @@ def fetch_qualities(bvid, cid, duration, cookie="", is_bili_login=False):
             fallback = [q for q in fallback if q["qn"] <= 80 or q.get("is_audio")]
         return fallback
 
+def get_proxy_for_url(url):
+    """
+    智能代理探测：针对海外媒体与被墙域名 (Twitter / X)，自动按优先级探测代理通道
+    1. 优先读取系统环境变量 (HTTP_PROXY / HTTPS_PROXY)
+    2. 自动探测本地及局域网 Clash 常用端口 (127.0.0.1:7890, 172.168.200.192:7890 等)
+    3. 普通国内站点 (如 B 站) 自动直连，避免无谓中转
+    """
+    need_proxy = any(domain in url for domain in ["twimg.com", "twitter.com", "x.com", "t.co", "fxtwitter.com", "vxtwitter.com"])
+    if not need_proxy:
+        return None
+
+    # 1. 优先使用系统环境变量
+    env_proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("https_proxy") or os.environ.get("http_proxy")
+    if env_proxy:
+        return env_proxy
+
+    # 2. 自动探测本地及局域网代理地址
+    candidates = [
+        ("127.0.0.1", 7890),
+        ("172.168.200.192", 7890),
+        ("127.0.0.1", 10809),
+        ("127.0.0.1", 1080)
+    ]
+    for host, port in candidates:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.2)
+                if s.connect_ex((host, port)) == 0:
+                    return f"http://{host}:{port}"
+        except Exception:
+            pass
+
+    return None
+
+def get_url_opener(url=""):
+    proxy = get_proxy_for_url(url)
+    if proxy:
+        return urllib.request.build_opener(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+    return urllib.request.build_opener()
+
+def is_twitter_url(url):
+    if not url:
+        return False
+    u = url.lower()
+    return any(k in u for k in ["x.com", "twitter.com", "t.co", "fxtwitter.com", "vxtwitter.com"])
+
+def parse_twitter_url(raw_url):
+    """
+    解析 X (Twitter) 推文视频，支持多清晰度 (包括 2.7K / 4K 原画) 提取与真实体积预估
+    """
+    final_url = raw_url.strip()
+    if "t.co/" in final_url:
+        try:
+            opener = get_url_opener(final_url)
+            req = urllib.request.Request(final_url, headers={"User-Agent": DEFAULT_UA})
+            with opener.open(req, timeout=5) as resp:
+                final_url = resp.geturl()
+        except Exception:
+            pass
+
+    m = re.search(r"(?:twitter|x)\.com/(?:[^/]+/status|i/status)/(\d+)", final_url)
+    if not m:
+        m = re.search(r"/status/(\d+)", final_url)
+    if not m:
+        raise ValueError("未识别到有效的 X (Twitter) 推文 ID")
+    status_id = m.group(1)
+
+    # 1. 优先调用 fxtwitter API 获取完整多清晰度与码率流
+    opener = get_url_opener("https://api.fxtwitter.com")
+    api_url = f"https://api.fxtwitter.com/status/{status_id}"
+    req = urllib.request.Request(api_url, headers={"User-Agent": DEFAULT_UA})
+    tweet_data = None
+    try:
+        with opener.open(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            tweet_data = data.get("tweet")
+    except Exception as fx_err:
+        print(f"[!] 请求 fxtwitter API 失败: {fx_err}，尝试切换备用源...", flush=True)
+
+    # 2. 备用源: vxtwitter API
+    if not tweet_data:
+        try:
+            vx_opener = get_url_opener("https://api.vxtwitter.com")
+            vx_req = urllib.request.Request(f"https://api.vxtwitter.com/status/{status_id}", headers={"User-Agent": DEFAULT_UA})
+            with vx_opener.open(vx_req, timeout=8) as resp:
+                vx_json = json.loads(resp.read().decode("utf-8"))
+                media_ext = vx_json.get("media_extended", [])
+                first_media = media_ext[0] if media_ext else {}
+                tweet_data = {
+                    "id": status_id,
+                    "text": vx_json.get("text", ""),
+                    "author": {
+                        "name": vx_json.get("user_name", "X User"),
+                        "screen_name": vx_json.get("user_screen_name", "")
+                    },
+                    "media": {
+                        "videos": [
+                            {
+                                "duration": (first_media.get("duration_millis", 0) / 1000.0),
+                                "thumbnail_url": first_media.get("thumbnail_url", ""),
+                                "width": first_media.get("size", {}).get("width", 0),
+                                "height": first_media.get("size", {}).get("height", 0),
+                                "variants": [
+                                    {
+                                        "url": first_media.get("url", ""),
+                                        "content_type": "video/mp4",
+                                        "bitrate": 0
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+        except Exception as vx_err:
+            print(f"[!] 请求 vxtwitter 备用 API 失败: {vx_err}", flush=True)
+
+    if not tweet_data:
+        raise ValueError(f"无法获取推文 (ID: {status_id}) 的媒体信息，请检查网络连接或链接有效性")
+
+    media = tweet_data.get("media", {})
+    videos = media.get("videos") or [m for m in media.get("all", []) if m.get("type") == "video" or "mp4" in m.get("format", "")]
+    if not videos:
+        raise ValueError("该推文未包含可下载的视频媒体")
+
+    # 检查是否指定了子视频索引 (如 /video/2)
+    m_v = re.search(r"/video/(\d+)", final_url)
+    target_video = videos[0]
+    if m_v:
+        idx = int(m_v.group(1)) - 1
+        if 0 <= idx < len(videos):
+            target_video = videos[idx]
+
+    duration = float(target_video.get("duration", 0))
+    thumbnail_url = target_video.get("thumbnail_url", "")
+
+    # 提取所有 MP4 清晰度流
+    raw_variants = target_video.get("variants", []) or target_video.get("formats", [])
+    mp4_variants = []
+    seen_urls = set()
+    for v in raw_variants:
+        v_url = v.get("url", "")
+        if not v_url or v_url in seen_urls:
+            continue
+        content_type = v.get("content_type", "")
+        if "mp4" not in content_type and ".mp4" not in v_url and "video/mp4" not in str(v):
+            continue
+        seen_urls.add(v_url)
+
+        bitrate = v.get("bitrate", 0)
+        m_res = re.search(r'/(\d+)x(\d+)/', v_url)
+        if m_res:
+            w, h = int(m_res.group(1)), int(m_res.group(2))
+        else:
+            w = target_video.get("width", 0)
+            h = target_video.get("height", 0)
+
+        mp4_variants.append({
+            "url": v_url,
+            "bitrate": bitrate,
+            "w": w,
+            "h": h
+        })
+
+    if not mp4_variants and target_video.get("url"):
+        mp4_variants.append({
+            "url": target_video["url"],
+            "bitrate": 0,
+            "w": target_video.get("width", 0),
+            "h": target_video.get("height", 0)
+        })
+
+    # 按分辨率及码率降序排序
+    mp4_variants.sort(key=lambda x: (x["w"] * x["h"], x["bitrate"]), reverse=True)
+
+    # 并发 HEAD 请求探测真实文件体积
+    def get_variant_size(v_item):
+        u = v_item["url"]
+        try:
+            op = get_url_opener(u)
+            r = urllib.request.Request(u, headers={"User-Agent": DEFAULT_UA}, method="HEAD")
+            with op.open(r, timeout=3.0) as resp:
+                cl = resp.headers.get("Content-Length")
+                if cl and cl.isdigit():
+                    return int(cl)
+        except Exception:
+            pass
+        if v_item["bitrate"] and duration:
+            return int(v_item["bitrate"] * duration / 8)
+        return None
+
+    exact_sizes = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(mp4_variants) or 1)) as ex:
+        future_to_url = {ex.submit(get_variant_size, v): v["url"] for v in mp4_variants}
+        for fut in concurrent.futures.as_completed(future_to_url):
+            u = future_to_url[fut]
+            try:
+                exact_sizes[u] = fut.result()
+            except Exception:
+                exact_sizes[u] = None
+
+    qualities = []
+    for idx, v in enumerate(mp4_variants):
+        w, h = v["w"], v["h"]
+        if w >= 3840 or h >= 2160:
+            desc = f"4K 超清 ({w}x{h})"
+            dfn_tag = "4K"
+            qn = 120
+        elif w >= 2560 or h >= 1440:
+            desc = f"2.7K 原画 ({w}x{h})"
+            dfn_tag = "2.7K"
+            qn = 116
+        elif w >= 1920 or h >= 1080:
+            desc = f"1080P 全高清 ({w}x{h})"
+            dfn_tag = "1080P"
+            qn = 80
+        elif w >= 1280 or h >= 720:
+            desc = f"720P 高清 ({w}x{h})"
+            dfn_tag = "720P"
+            qn = 64
+        elif w >= 640 or h >= 360:
+            desc = f"360P 标清 ({w}x{h})"
+            dfn_tag = "360P"
+            qn = 32
+        elif w > 0 and h > 0:
+            desc = f"流畅画质 ({w}x{h})"
+            dfn_tag = "流畅"
+            qn = 16
+        else:
+            desc = f"原画视频"
+            dfn_tag = "原画"
+            qn = 80 - idx * 10
+
+        b_size = exact_sizes.get(v["url"])
+        if b_size:
+            size_str = f"{b_size / (1024 * 1024):.1f} MB"
+        else:
+            size_str = "原画质"
+
+        qualities.append({
+            "qn": qn,
+            "desc": desc,
+            "dfn": desc,
+            "dfn_tag": dfn_tag,
+            "badge": "最高原画" if idx == 0 else "",
+            "badge_type": "free",
+            "size": size_str,
+            "is_audio": False,
+            "direct_url": v["url"]
+        })
+
+    # 音频流选项
+    qualities.append({
+        "qn": 0,
+        "desc": "仅下载音频 (M4A)",
+        "dfn": "",
+        "dfn_tag": "仅音频",
+        "badge": "纯音频",
+        "badge_type": "audio",
+        "size": "提取原声",
+        "is_audio": True,
+        "direct_url": mp4_variants[0]["url"] if mp4_variants else ""
+    })
+
+    author_obj = tweet_data.get("author", {})
+    author_name = author_obj.get("name") or author_obj.get("screen_name") or "X 用户"
+    screen_name = author_obj.get("screen_name", "")
+    owner_str = f"{author_name} (@{screen_name})" if screen_name else author_name
+
+    raw_text = tweet_data.get("text", "")
+    clean_text = re.sub(r'https?://t\.co/\S+', '', raw_text)
+    clean_text = re.sub(r'https?://\S+', '', clean_text)
+    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+    if not clean_text:
+        clean_text = f"X_Post_{status_id}"
+    title = clean_text[:100].strip()
+
+    return {
+        "platform": "twitter",
+        "title": title,
+        "raw_text": raw_text,
+        "pic": thumbnail_url,
+        "bvid": f"X_{status_id}",
+        "aid": f"X_{status_id}",
+        "cid": 0,
+        "duration": int(duration),
+        "owner": owner_str,
+        "qualities": qualities,
+        "is_bili_login": False
+    }
+
+def download_direct_file(direct_url, target_file, aid, user_id, task_id, title, dfn_tag, audio_only=False):
+    """
+    后台线程执行 X (Twitter) 直链原画下载或原声音频提取
+    1. 动态自适应探测网络代理 (避免 twimg CDN 阻断)
+    2. 分块写入与精确进度、速率计算 (实时同步至 ACTIVE_RUNNING_TASKS)
+    3. 安全写入 (.part 临时文件，下载完成后原子重命名)
+    4. 支持音视频分离提取 (若选择纯音频，自动调用 ffmpeg 转码为 m4a)
+    """
+    part_file = target_file + ".part"
+    temp_mp4 = part_file if not audio_only else (target_file + ".temp.mp4")
+    opener = get_url_opener(direct_url)
+    req = urllib.request.Request(direct_url, headers={
+        "User-Agent": DEFAULT_UA,
+        "Referer": "https://x.com/"
+    })
+
+    start_time = time.time()
+    last_calc_time = start_time
+    last_calc_bytes = 0
+    downloaded_bytes = 0
+    total_bytes = 0
+
+    try:
+        os.makedirs(os.path.dirname(target_file), exist_ok=True)
+        with opener.open(req, timeout=30) as resp:
+            cl = resp.headers.get("Content-Length")
+            if cl and cl.isdigit():
+                total_bytes = int(cl)
+
+            chunk_size = 128 * 1024
+            with open(temp_mp4, "wb") as f:
+                while True:
+                    with ACTIVE_TASKS_LOCK:
+                        act = ACTIVE_RUNNING_TASKS.get(str(aid))
+                        if not act or act.get("cancelled"):
+                            print(f"[*] 任务 {aid} 已被用户取消下载", flush=True)
+                            if os.path.exists(temp_mp4):
+                                try:
+                                    os.remove(temp_mp4)
+                                except Exception:
+                                    pass
+                            return
+
+                    chunk = resp.read(chunk_size)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded_bytes += len(chunk)
+
+                    now = time.time()
+                    elapsed = now - last_calc_time
+                    if elapsed >= 0.4:
+                        speed = int((downloaded_bytes - last_calc_bytes) / elapsed) if elapsed > 0 else 0
+                        last_calc_time = now
+                        last_calc_bytes = downloaded_bytes
+                        progress = (downloaded_bytes / total_bytes) if total_bytes > 0 else 0.5
+
+                        with ACTIVE_TASKS_LOCK:
+                            aid_str = str(aid)
+                            if aid_str in ACTIVE_RUNNING_TASKS:
+                                ACTIVE_RUNNING_TASKS[aid_str]["progress"] = progress
+                                ACTIVE_RUNNING_TASKS[aid_str]["speed"] = speed
+                                ACTIVE_RUNNING_TASKS[aid_str]["downloaded_bytes"] = downloaded_bytes
+                                ACTIVE_RUNNING_TASKS[aid_str]["total_bytes"] = total_bytes
+
+        if audio_only:
+            ffmpeg_cmd = ["ffmpeg", "-y", "-i", temp_mp4, "-vn", "-c:a", "copy", target_file]
+            subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            if os.path.exists(temp_mp4):
+                try:
+                    os.remove(temp_mp4)
+                except Exception:
+                    pass
+        else:
+            if os.path.exists(target_file):
+                try:
+                    os.remove(target_file)
+                except Exception:
+                    pass
+            shutil.move(temp_mp4, target_file)
+
+        print(f"[✓] X 直链任务下载完成: {target_file} ({downloaded_bytes / (1024 * 1024):.2f} MB)", flush=True)
+
+    except Exception as e:
+        print(f"[!] X 直链下载异常: {e}", flush=True)
+        for p in [part_file, target_file + ".temp.mp4"]:
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+    finally:
+        with ACTIVE_TASKS_LOCK:
+            aid_str = str(aid)
+            if aid_str in ACTIVE_RUNNING_TASKS:
+                del ACTIVE_RUNNING_TASKS[aid_str]
+
 def parse_bili_url(raw_url, cookie="", is_bili_login=False):
     final_url = raw_url
     if raw_url.startswith("http://") or raw_url.startswith("https://"):
@@ -708,7 +1097,7 @@ class WebUIHandler(SimpleHTTPRequestHandler):
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
 
-        # 0. 封面图片代理 (彻底解决 B 站图片防盗链 403 问题)
+        # 0. 封面图片代理 (解决 B 站防盗链及 X/Twitter 缩略图代理)
         if path == "/api/image-proxy":
             img_url = query.get("url", [""])[0].strip()
             if not img_url:
@@ -716,11 +1105,15 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 return
             try:
-                img_req = urllib.request.Request(img_url, headers={
-                    "User-Agent": DEFAULT_UA,
-                    "Referer": "https://www.bilibili.com/"
-                })
-                with urllib.request.urlopen(img_req, timeout=6) as img_resp:
+                opener = get_url_opener(img_url)
+                headers = {"User-Agent": DEFAULT_UA}
+                if "twimg.com" in img_url or "twitter.com" in img_url or "x.com" in img_url:
+                    headers["Referer"] = "https://x.com/"
+                else:
+                    headers["Referer"] = "https://www.bilibili.com/"
+
+                img_req = urllib.request.Request(img_url, headers=headers)
+                with opener.open(img_req, timeout=8) as img_resp:
                     content_type = img_resp.headers.get("Content-Type", "image/jpeg")
                     img_data = img_resp.read()
                     self.send_response(200)
@@ -790,11 +1183,20 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             is_stream = (path == "/api/file/stream")
             return self.send_file_range(file_path, is_stream=is_stream)
 
-        # 3. 视频解析接口 (自动识别 B 站登录态：未登录默认走 TV，仅显示免费画质；登录后解锁全高清)
+        # 3. 视频解析接口 (自动识别 B 站与 X / Twitter 平台)
         if path == "/api/parse":
             url = query.get("url", [""])[0].strip()
             if not url:
                 return self.send_json(400, {"code": -1, "message": "缺少 url 参数"})
+
+            # 判断是否为 X (Twitter) 链接
+            if is_twitter_url(url):
+                try:
+                    info = parse_twitter_url(url)
+                    return self.send_json(200, {"code": 0, "data": info})
+                except Exception as e:
+                    return self.send_json(500, {"code": -1, "message": f"X (Twitter) 解析失败: {e}"})
+
             user = self.get_current_user(query)
             cookie = extract_bili_cookie_from_request(self.headers, query) or (user.get("bili_cookie", "") if user else "")
 
@@ -989,10 +1391,10 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             bb_finished = bbdown_tasks.get("Finished", [])
 
             with ACTIVE_TASKS_LOCK:
-                # 自动清理已进入 Finished 状态的活跃映射
+                # 自动清理已进入 Finished 状态的活跃映射 (保留直链下载)
                 for f in bb_finished:
                     f_aid = str(f.get("Aid") or "")
-                    if f_aid in ACTIVE_RUNNING_TASKS:
+                    if f_aid in ACTIVE_RUNNING_TASKS and not ACTIVE_RUNNING_TASKS[f_aid].get("is_direct"):
                         del ACTIVE_RUNNING_TASKS[f_aid]
 
                 for r in bb_running:
@@ -1005,6 +1407,24 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                         r_copy["DfnTag"] = active_info["dfn_tag"]
                         r_copy["TaskId"] = active_info["task_id"]
                         user_running.append(r_copy)
+
+                # 包含直链正在下载的任务 (如 X / Twitter)
+                for aid_key, active_info in ACTIVE_RUNNING_TASKS.items():
+                    if active_info.get("is_direct") and active_info["user_id"] == user["id"]:
+                        user_running.append({
+                            "Id": active_info["task_id"],
+                            "TaskId": active_info["task_id"],
+                            "Aid": aid_key,
+                            "Title": active_info.get("title", ""),
+                            "Url": active_info.get("url", ""),
+                            "Progress": active_info.get("progress", 0.0),
+                            "DownloadSpeed": active_info.get("speed", 0),
+                            "TotalDownloadedBytes": active_info.get("downloaded_bytes", 0),
+                            "QualityLabel": active_info["quality_label"],
+                            "DfnTag": active_info["dfn_tag"],
+                            "WorkDir": active_info["work_dir"],
+                            "Platform": active_info.get("platform", "bilibili")
+                        })
 
             # 筛选已完成任务并精准关联磁盘文件
             user_finished = []
@@ -1109,6 +1529,10 @@ class WebUIHandler(SimpleHTTPRequestHandler):
             if target_id:
                 db.remove_user_task(user["id"], target_id)
                 if aid:
+                    with ACTIVE_TASKS_LOCK:
+                        if str(aid) in ACTIVE_RUNNING_TASKS:
+                            ACTIVE_RUNNING_TASKS[str(aid)]["cancelled"] = True
+                            del ACTIVE_RUNNING_TASKS[str(aid)]
                     try:
                         urllib.request.urlopen(f"http://127.0.0.1:{SERVER_PORT}/remove-finished/{aid}", timeout=2)
                     except:
@@ -1305,6 +1729,68 @@ class WebUIHandler(SimpleHTTPRequestHandler):
                     dfn_tag = f"{dfn_tag} ({counter})"
 
                 aid = req_data.get("Aid")
+                direct_url = req_data.get("DirectUrl")
+                platform = req_data.get("Platform", "bilibili")
+
+                # 处理 X (Twitter) 直链任务
+                if platform == "twitter" or direct_url:
+                    clean_title = get_bbdown_valid_title(title)
+                    if "<dfn>" in file_pattern or "[<dfn>]" in file_pattern:
+                        target_filename = f"{clean_title} [{dfn_tag}]{expected_ext}" if dfn_tag else f"{clean_title}{expected_ext}"
+                    else:
+                        target_filename = f"{clean_title}{expected_ext}"
+                    target_file_path = os.path.join(work_dir, target_filename)
+
+                    if not aid:
+                        aid = f"X_{int(time.time() * 1000)}"
+                    elif not str(aid).startswith("X_"):
+                        aid = f"X_{aid}"
+
+                    task_meta = {
+                        "url": req_data.get("Url", ""),
+                        "aid": str(aid),
+                        "title": title,
+                        "qualityLabel": req_data.get("QualityLabel", ""),
+                        "dfnTag": dfn_tag,
+                        "workDir": work_dir,
+                        "expectedExt": expected_ext,
+                        "filePattern": file_pattern,
+                        "addTime": time.time()
+                    }
+                    task_id = db.add_user_task(user["id"], task_meta)
+
+                    with ACTIVE_TASKS_LOCK:
+                        ACTIVE_RUNNING_TASKS[str(aid)] = {
+                            "user_id": user["id"],
+                            "task_id": task_id,
+                            "dfn_tag": dfn_tag,
+                            "quality_label": req_data.get("QualityLabel") or dfn_tag,
+                            "work_dir": work_dir,
+                            "start_time": time.time(),
+                            "is_direct": True,
+                            "platform": "twitter",
+                            "progress": 0.0,
+                            "speed": 0,
+                            "downloaded_bytes": 0,
+                            "total_bytes": 0,
+                            "title": title,
+                            "url": req_data.get("Url", ""),
+                            "direct_url": direct_url,
+                            "audio_only": req_data.get("AudioOnly", False)
+                        }
+
+                    threading.Thread(
+                        target=download_direct_file,
+                        args=(direct_url, target_file_path, str(aid), user["id"], task_id, title, dfn_tag, req_data.get("AudioOnly", False)),
+                        daemon=True
+                    ).start()
+
+                    return self.send_json(200, {
+                        "code": 0,
+                        "message": "已成功启动 X (Twitter) 原画下载",
+                        "taskId": task_id
+                    })
+
                 if aid:
                     try:
                         urllib.request.urlopen(f"http://127.0.0.1:{SERVER_PORT}/remove-finished/{aid}", timeout=2)
